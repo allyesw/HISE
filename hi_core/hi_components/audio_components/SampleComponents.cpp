@@ -734,7 +734,7 @@ void SamplerSoundWaveform::drawSampleStartBar(Graphics &g)
 
 		g.drawVerticalLine(x, 1, (float)getBottom() - 1);
 
-		g.setColour(c.withAlpha(0.3f));
+		g.setColour(c.withAlpha(0.0f));
 
 		g.fillRect(jmax<int>(0, x - 5), 1, 10, getHeight() - 2);
 	}
