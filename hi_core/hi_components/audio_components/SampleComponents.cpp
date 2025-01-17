@@ -1439,10 +1439,12 @@ void WaterfallComponent::LookAndFeelMethods::drawWavetablePath(Graphics& g, Wate
 
 	thisAlpha = jmax(0.08f, hmath::pow(thisAlpha, 8.0f)*0.5f);
 	thisAlpha *= alpha;
+    
+    auto c = wc.findColour(HiseColourScheme::ColourIds::ComponentTextColourId); // secondary wavetable lines
 
 	if (tableIndex == currentTableIndex)
 	{
-		thisAlpha = 1.0f;
+		thisAlpha = 1.0f; // current index wavetable line
 
 		if (isStereo)
 		{
@@ -1463,7 +1465,7 @@ void WaterfallComponent::LookAndFeelMethods::drawWavetablePath(Graphics& g, Wate
 		return;
 	}
 
-	auto c = wc.findColour(HiseColourScheme::ColourIds::ComponentFillTopColourId).withMultipliedAlpha(thisAlpha);
+//	auto c = wc.findColour(HiseColourScheme::ColourIds::ComponentFillTopColourId).withMultipliedAlpha(thisAlpha);
 
 	g.setColour(c);
 
