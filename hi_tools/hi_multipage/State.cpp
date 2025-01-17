@@ -1094,7 +1094,7 @@ var MonolithData::getJSON() const
 	{
 		auto numToRead = input->readInt64();
 		MemoryBlock mb;
-		auto numRead = input->readIntoMemoryBlock(mb, numToRead);
+		auto numRead = (int64)input->readIntoMemoryBlock(mb, numToRead);
 
 		if(numRead == numToRead)
 		{
@@ -1113,6 +1113,8 @@ var MonolithData::getJSON() const
 		else
 			throw String("Failed to read " + String(numToRead) + " bytes");
 	}
+
+	return var();
 }
 
 void HardcodedDialogWithState::setOnCloseFunction(const std::function<void()>& f)
@@ -1127,7 +1129,7 @@ void HardcodedDialogWithState::resized()
 {
 	if(dialog == nullptr)
 	{
-		if(dialog = createDialog(state))
+        if((dialog = createDialog(state)))
 		{
 			addAndMakeVisible(dialog);
 

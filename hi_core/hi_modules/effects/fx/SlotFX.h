@@ -35,10 +35,19 @@ public:
     virtual var getParameterProperties() const = 0;
 };
 
+
+
 class HardcodedSwappableEffect : public HotswappableProcessor,
-							     public ProcessorWithExternalData
+							     public ProcessorWithExternalData,
+								 public RuntimeTargetHolder
 {
 public:
+
+	static Identifier getSanitizedParameterId(const String& id)
+	{
+		auto sanitized = id.removeCharacters(" \t\n/-+.,");
+		return Identifier(sanitized);
+	}
 
 	virtual ~HardcodedSwappableEffect();
 
@@ -89,9 +98,8 @@ public:
 
     var getParameterProperties() const override;
     
-    void disconnectRuntimeTargets();
-    
-    void connectRuntimeTargets();
+    void disconnectRuntimeTargets(MainController* mc) override;
+    void connectRuntimeTargets(MainController* mc) override;
     
 protected:
 	

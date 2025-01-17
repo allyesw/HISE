@@ -1155,6 +1155,8 @@ TextEditor * MultilineLabel::createEditorComponent()
 
 	textEditor->setMultiLine(multiline, true);
 
+	textEditor->setJustification(alignmentForLabelAndEditor);
+
 	if(auto root = simple_css::CSSRootComponent::find(*this))
 		root->stateWatcher.registerComponentToUpdate(textEditor);
 

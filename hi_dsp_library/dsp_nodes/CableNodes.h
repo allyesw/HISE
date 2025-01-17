@@ -1097,6 +1097,75 @@ namespace control
 		}
 	};
 
+	template <typename ParameterClass> struct unscaler : public mothernode,
+														   public pimpl::parameter_node_base<ParameterClass>,
+														   public pimpl::no_processing,
+												           public pimpl::no_mod_normalisation	
+	{
+		SN_NODE_ID("unscaler");
+		SN_GET_SELF_AS_OBJECT(unscaler);
+		SN_DESCRIPTION("forwards the raw parameter value");
+
+		SN_ADD_SET_VALUE(unscaler);
+
+		unscaler() :
+			pimpl::parameter_node_base<ParameterClass>(getStaticId()),
+		    pimpl::no_mod_normalisation(getStaticId(), { "Value" }) 
+		{};
+
+		static constexpr bool isNormalisedModulation() { return false; }
+
+		void setValue(double input)
+		{
+			if (this->getParameter().isConnected())
+				this->getParameter().call(input);
+		}
+	};
+
+	template <typename ParameterClass> struct locked_mod: public mothernode,
+					   public pimpl::parameter_node_base<ParameterClass>,
+					   public pimpl::no_processing
+	{
+		SN_NODE_ID("locked_mod");
+		SN_GET_SELF_AS_OBJECT(locked_mod);
+		SN_DESCRIPTION("Adds a scaled modulation dragger to its immediate locked node container parent");
+		SN_ADD_SET_VALUE(locked_mod);
+
+		locked_mod() :
+			pimpl::parameter_node_base<ParameterClass>(getStaticId())
+		{};
+
+		void setValue(double input)
+		{
+			if (this->getParameter().isConnected())
+				this->getParameter().call(input);
+		}
+	};
+
+	template <typename ParameterClass> struct locked_mod_unscaled: public mothernode,
+					   public pimpl::parameter_node_base<ParameterClass>,
+					   public pimpl::no_processing,
+					   public pimpl::no_mod_normalisation	
+	{
+		SN_NODE_ID("locked_mod_unscaled");
+		SN_GET_SELF_AS_OBJECT(locked_mod_unscaled);
+		SN_DESCRIPTION("Adds a unscaled modulation dragger to its immediate locked node container parent");
+		SN_ADD_SET_VALUE(locked_mod_unscaled);
+
+		locked_mod_unscaled() :
+			pimpl::parameter_node_base<ParameterClass>(getStaticId()),
+		    pimpl::no_mod_normalisation(getStaticId(), { "Value" }) 
+		{};
+
+		static constexpr bool isNormalisedModulation() { return false; }
+
+		void setValue(double input)
+		{
+			if (this->getParameter().isConnected())
+				this->getParameter().call(input);
+		}
+	};
+
     template <typename ParameterClass, typename ConverterClass>
         struct converter : public mothernode,
 						   public pimpl::templated_mode,
@@ -1109,7 +1178,7 @@ namespace control
         SN_DESCRIPTION("converts a control value");
 
         SN_DEFAULT_INIT(ConverterClass);
-        SN_DEFAULT_PREPARE(ConverterClass);
+        
         SN_ADD_SET_VALUE(converter);
 
 		converter() :
@@ -1118,8 +1187,27 @@ namespace control
 			pimpl::parameter_node_base<ParameterClass>(getStaticId())
 		{};
 
+		static constexpr bool usesPrepareSpecs()
+		{
+			return prototypes::check::prepare<ConverterClass>::value;
+		}
+
+		void prepare(PrepareSpecs ps)
+		{
+			if constexpr (usesPrepareSpecs())
+				this->obj.prepare(ps);
+
+			if(lastInput.first)
+			{
+				setValue(lastInput.second);
+			}
+		}
+
         void setValue(double input)
         {
+			if constexpr (usesPrepareSpecs())
+				lastInput = { true, input };
+
             auto v = obj.getValue(input);
 
             if (this->getParameter().isConnected())
@@ -1127,6 +1215,7 @@ namespace control
         }
 
         ConverterClass obj;
+		std::pair<bool, double> lastInput = { false, 0.0 };
     };
 
 	template <typename ParameterClass> struct random : public mothernode,
@@ -1935,7 +2024,110 @@ namespace control
 			LogicState rightValue = LogicState::Undefined;
 			LogicType logicType = LogicType::AND;
 			mutable bool dirty = false;
+		};
 
+	    struct compare
+		{
+			enum class Comparator
+			{
+				EQ,
+				NEQ,
+				GT,
+				LT,
+				GET,
+				LET,
+				MIN,
+				MAX,
+                numComparators
+			};
+
+			SN_NODE_ID("compare");
+			SN_DESCRIPTION("compares the input signals and outputs either 1.0 or 0.0");
+
+			static constexpr bool isNormalisedModulation() { return true; }
+            static constexpr bool needsProcessing() { return false; }
+
+			bool operator==(const compare& other) const
+			{
+				return comparator == other.comparator && leftValue == other.leftValue && rightValue == other.rightValue;
+			}
+
+			void reset()
+			{
+				
+			}
+
+			double getValue() const
+			{
+				dirty = false;
+
+				switch (comparator)
+				{
+                    case Comparator::EQ:  return (double)(int)(leftValue == rightValue);
+                    case Comparator::NEQ: return (double)(int)(leftValue != rightValue);
+                    case Comparator::GT:  return (double)(int)(leftValue  > rightValue);
+                    case Comparator::LT:  return (double)(int)(leftValue  < rightValue);
+                    case Comparator::GET: return (double)(int)(leftValue >= rightValue);
+                    case Comparator::LET: return (double)(int)(leftValue <= rightValue);
+                    case Comparator::MIN: return jmin(leftValue, rightValue);
+                    case Comparator::MAX: return jmax(leftValue, rightValue);
+                    case Comparator::numComparators:
+                    default: return 0.0;
+				}
+			}
+
+			template <int P> void setParameter(double v)
+			{
+				if constexpr (P == 0)
+				{
+					auto prevValue = leftValue;
+					leftValue = v;
+					dirty |= leftValue != prevValue;
+				}
+					
+				if constexpr (P == 1)
+				{
+					auto prevValue = rightValue;
+					rightValue = v;
+					dirty |= (prevValue != rightValue);
+				}
+					
+				if constexpr (P == 2)
+				{
+					comparator = (Comparator)jlimit(0, (int)Comparator::numComparators - 1, (int)v);
+					dirty = true;
+				}
+			}
+
+			template <typename NodeType> static void createParameters(ParameterDataList& data, NodeType& n)
+			{
+				{
+					parameter::data p("Left");
+					p.template setParameterCallbackWithIndex<NodeType, 0>(&n);
+					p.setRange({ 0.0, 1.0 });
+					p.setDefaultValue(0.0);
+					data.add(std::move(p));
+				}
+				{
+					parameter::data p("Right");
+					p.template setParameterCallbackWithIndex<NodeType, 1>(&n);
+					p.setRange({ 0.0, 1.0 });
+					p.setDefaultValue(0.0);
+					data.add(std::move(p));
+				}
+				{
+					parameter::data p("Comparator");
+					p.template setParameterCallbackWithIndex<NodeType, 2>(&n);
+					p.setParameterValueNames({ "EQ", "NEQ", "GT", "LT", "GTE", "LTE", "MIN", "MAX" });
+					p.setDefaultValue(0.0);
+					data.add(std::move(p));
+				}
+			}
+
+			double leftValue = 0.0;
+			double rightValue = 0.0;
+            Comparator comparator = Comparator::EQ;
+			mutable bool dirty = false;
 		};
 
 		struct change: public pimpl::no_mod_normalisation
@@ -2358,6 +2550,7 @@ namespace control
 	template <int NV, typename ParameterType> using bipolar = multi_parameter<NV, ParameterType, multilogic::bipolar>;
 	template <int NV, typename ParameterType> using minmax = multi_parameter<NV, ParameterType, multilogic::minmax>;
 	template <int NV, typename ParameterType> using logic_op = multi_parameter<NV, ParameterType, multilogic::logic_op>;
+    template <int NV, typename ParameterType> using compare = multi_parameter<NV, ParameterType, multilogic::compare>;
 	template <int NV, typename ParameterType> using intensity = multi_parameter<NV, ParameterType, multilogic::intensity>;
 	template <int NV, typename ParameterType> using bang = multi_parameter<NV, ParameterType, multilogic::bang>;
     template <int NV, typename ParameterType> using delay_cable = multi_parameter<NV, ParameterType, multilogic::delay_cable>;

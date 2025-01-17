@@ -179,21 +179,7 @@ public:
 		return resourceType;
 	}
 
-	bool extractEmbedded()
-	{
-		if(resourceType == ResourceType::EmbeddedInSnippet)
-		{
-			if(!file.existsAsFile() || PresetHandler::showYesNoWindow("Overwrite local file", "The file " + getFile().getFileName() + " from the snippet already exists. Do you want to overwrite your local file?"))
-			{
-				file.getParentDirectory().createDirectory();
-				file.replaceWithText(content.getAllContent());
-				resourceType = ResourceType::FileBased;
-				return true;
-			}
-		}
-
-		return false;
-	}
+	bool extractEmbedded();
 
 private:
 
@@ -265,6 +251,7 @@ public:
 	ExternalScriptFile::Ptr getExternalScriptFile(int index) const;
 
 	void clearIncludedFiles();
+	void removeIncludedFile(int index);
 
 	void restoreIncludedScriptFilesFromSnippet(const ValueTree& snippetTree);
 
@@ -293,6 +280,8 @@ public:
 	Array<Identifier> getAllWebViewIds() const;
 
 	void setWebViewRoot(File newRoot);
+
+	void saveAllExternalFiles();
 
 private:
 	

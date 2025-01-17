@@ -131,6 +131,11 @@ public:
 
 	void updateAutocomplete(bool forceShow = false);
 
+    void prepareExternalInsert()
+    {
+        autocompleteSelection = document.getSelection(0);
+    }
+    
 	bool gotoDefinition(Selection s1 = {});
 
 	void tokenListWasRebuild() override {};

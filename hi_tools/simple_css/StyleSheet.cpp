@@ -46,7 +46,8 @@ TransitionValue StyleSheet::getTransitionValue(const PropertyKey& key) const
 
 	for(const auto i: animator->items)
 	{
-		if(i->target != animator->currentlyRenderedComponent)
+		if(i->target.first != animator->currentlyRenderedComponent.first ||
+		   i->target.second != animator->currentlyRenderedComponent.second)
 			continue;
 
 		if(i->css != this)
@@ -1593,7 +1594,6 @@ std::vector<melatonin::ShadowParameters> StyleSheet::getShadow(Rectangle<float> 
 		{
 			auto full = v.getRawValueString();
 			auto ptr = full.begin();
-			auto token = ptr;
 			auto end = full.end();
 
 			char buffer[128];
