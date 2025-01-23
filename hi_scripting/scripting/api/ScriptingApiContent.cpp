@@ -4182,22 +4182,22 @@ void ScriptingApi::Content::ScriptPanel::init()
 	setDefaultValue(ScriptComponent::Properties::height, 50);
 	setDefaultValue(ScriptComponent::Properties::saveInPreset, false);
 	setDefaultValue(ScriptComponent::Properties::isPluginParameter, false);
-	setDefaultValue(textColour, 0x00FFFFFF);
-	setDefaultValue(itemColour, 0x00000000);
-	setDefaultValue(itemColour2, 0x00000000);
-    setDefaultValue(bgColour, 0x00000000);
-	setDefaultValue(borderSize, 0.0f);
-	setDefaultValue(borderRadius, 0.0f);
+	setDefaultValue(textColour, 0x00FFFFFF); //changed: panel default properties
+	setDefaultValue(itemColour, 0x00000000); //changed: panel default properties
+	setDefaultValue(itemColour2, 0x00000000); //changed: panel default properties
+    setDefaultValue(bgColour, 0x00000000); //changed: panel default properties
+	setDefaultValue(borderSize, 0.0f); //changed: panel default properties
+	setDefaultValue(borderRadius, 0.0f); //changed: panel default properties
 	setDefaultValue(opaque, false);
 	setDefaultValue(allowDragging, 0);
 	setDefaultValue(allowCallbacks, "No Callbacks");
 	setDefaultValue(PopupMenuItems, "");
-	setDefaultValue(PopupOnRightClick, false);
+	setDefaultValue(PopupOnRightClick, false); //changed: panel default properties
 	setDefaultValue(popupMenuAlign, false);
 	setDefaultValue(selectedPopupIndex, -1);
 	setDefaultValue(stepSize, 0.0);
 	setDefaultValue(enableMidiLearn, false);
-	setDefaultValue(holdIsRightClick, false);
+	setDefaultValue(holdIsRightClick, false); //changed: panel default properties
 	setDefaultValue(isPopupPanel, false);
     setDefaultValue(bufferToImage, false);
 

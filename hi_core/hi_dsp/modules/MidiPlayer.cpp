@@ -508,9 +508,9 @@ juce::File HiseMidiSequence::writeToTempFile()
 	auto name = id.toString();
 
 	if (name.isEmpty())
-		name = "temp";
-
-	auto tmp = File::getSpecialLocation(File::SpecialLocationType::tempDirectory).getNonexistentChildFile("ESW House Cat", ".mid");
+        name = "ESW House Cat"; // changed: dragged out MIDI filename
+    
+	auto tmp = File::getSpecialLocation(File::SpecialLocationType::tempDirectory).getNonexistentChildFile(name, ".mid");
 	tmp.create();
 
 	FileOutputStream fos(tmp);
