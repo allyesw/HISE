@@ -727,14 +727,14 @@ void SamplerSoundWaveform::drawSampleStartBar(Graphics &g)
 {
 	if (sampleStartPosition != -1.0)
 	{
-		auto c = SampleArea::getAreaColour(AudioDisplayComponent::AreaTypes::SampleStartArea);
+        auto c = juce::Colour(0x00ffffff); //changed: removed green SampleStartMod color (make line transparent)
 		g.setColour(c);
 
 		const int x = areas[PlayArea]->getX() + areas[SampleStartArea]->getX() + (int)(sampleStartPosition * areas[SampleStartArea]->getWidth());
 
 		g.drawVerticalLine(x, 1, (float)getBottom() - 1);
 
-		g.setColour(c.withAlpha(0.0f));
+		g.setColour(c.withAlpha(0.0f)); //changed: removed green SampleStartMod color (make area overlay transparent)
 
 		g.fillRect(jmax<int>(0, x - 5), 1, 10, getHeight() - 2);
 	}
@@ -1440,12 +1440,12 @@ void WaterfallComponent::LookAndFeelMethods::drawWavetablePath(Graphics& g, Wate
 	thisAlpha = jmax(0.08f, hmath::pow(thisAlpha, 8.0f)*0.5f);
 	thisAlpha *= alpha;
     
-    // secondary wavetable lines
+    // changed: wavetable waterfall colors (secondary wavetable lines_
     auto c = wc.findColour(HiseColourScheme::ColourIds::ComponentTextColourId);
 
 	if (tableIndex == currentTableIndex)
 	{
-        // current index wavetable line
+        // changed: wavetable waterfall colors (current index wavetable line)
 		thisAlpha = 1.0f;
         c = wc.findColour(HiseColourScheme::ColourIds::ComponentFillTopColourId);
 
