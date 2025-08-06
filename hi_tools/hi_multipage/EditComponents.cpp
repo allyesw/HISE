@@ -62,7 +62,7 @@ static const char* BatchFile = R"(
 
     set -o pipefail
     echo Compiling %PROJECT% ...
-    xcodebuild -project "Builds/MacOSX/%PROJECT%.xcodeproj" -configuration "Release" -jobs "10" | xcpretty
+    xcodebuild -project "Builds/MacOSX/%PROJECT%.xcodeproj" -configuration "Release" -jobs "6" | "%HISE_PATH%/tools/Projucer/xcbeautify"
 )";
 #elif JUCE_LINUX
 static const char* BatchFile = R"(
@@ -172,7 +172,7 @@ START_JUCE_APPLICATION (MainWrapper)
     </GROUP>
   </MAINGROUP>
   <EXPORTFORMATS>
-    <XCODE_MAC targetFolder="Builds/MacOSX" extraDefs="USE_IPP=0&#10;PERFETTO=0&#10;USE_BACKEND=1"
+    <XCODE_MAC targetFolder="Builds/MacOSX" extraDefs="PERFETTO=0&#10;USE_BACKEND=1"
                extraCompilerFlags="-Wno-reorder -Wno-inconsistent-missing-override -mpopcnt -faligned-allocation -Wno-switch"
                xcodeValidArchs="x86_64" smallIcon="%ICON_REF%" bigIcon="%ICON_REF%" iosDevelopmentTeamID="%TEAM_ID%">
       <CONFIGURATIONS>

@@ -93,7 +93,6 @@ private:
 		if(wildcard == "-p:")
 		{
 			throwErrorAndQuit("`" + s + "` is not a valid path");
-			RETURN_IF_NO_THROW(File());
 		}
 
 		return File();
@@ -370,6 +369,12 @@ public:
 		exporter.getComboBoxComponent("build")->setText(config, dontSendNotification);
 
 		exporter.run();
+
+		auto r = exporter.getCompilationResult();
+
+		if(r.failed())
+			throwErrorAndQuit(r.getErrorMessage());
+
 		exporter.threadFinished();
 	}
 
@@ -553,6 +558,13 @@ public:
 
 			double progress;
 			Logger l;
+
+			print("Copying image files");
+
+			auto imgSrc = docRoot.getChildFile("images");
+			auto imgTarget = htmlDir.getChildFile("images");
+
+			imgSrc.copyDirectoryTo(imgTarget);
 
 			DatabaseCrawler::createImagesInHtmlFolder(htmlDir, *bp, &l, &progress);
 			DatabaseCrawler::createHtmlFilesInHtmlFolder(htmlDir, *bp, &l, &progress);
@@ -885,7 +897,8 @@ public:
 				}
 			}
 
-            setContentOwned (new MainContentComponent(commandLine), true);
+			auto mc = new MainContentComponent(commandLine);
+            setContentOwned (mc, true);
 
 #if JUCE_IOS
             
@@ -899,9 +912,10 @@ public:
 
 			setUsingNativeTitleBar(true);
 
-
-            
-            centreWithSize (getWidth(), getHeight() - 28);
+			if(mc->makeFullscreenOnLaunch)
+				setFullScreen(true);
+			else
+				centreWithSize (getWidth(), getHeight() - 28);
             
 #endif
             
@@ -968,7 +982,7 @@ MainContentComponent::MainContentComponent(const String &commandLine)
 
     setSize(editor->getWidth(), editor->getHeight());
 
-    
+    makeFullscreenOnLaunch = (bool)editor->getProperties()["FullScreen"];
 
     handleCommandLineArguments(commandLine);
 }

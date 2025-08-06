@@ -88,7 +88,7 @@ END_MARKDOWN_CHAPTER()
 
 static bool areMajorWebsitesAvailable()
 {
-	const char* urlsToTry[] = { "http://google.com/generate_204", "https://amazon.com", nullptr };
+	const char* urlsToTry[] = { "https://google.com/generate_204", "https://amazon.com", nullptr };
 
 	for (const char** url = urlsToTry; *url != nullptr; ++url)
 	{
@@ -745,10 +745,10 @@ This will use Loris to separate the noise from the sinusoidal parts of the sampl
 
 	void refreshEnablement()
 	{
-		auto resynthesise = converter->phaseMode != SampleMapToWavetableConverter::PhaseMode::Resample;
+		auto resynthesise = converter->cd.phaseMode != SampleMapToWavetableConverter::PhaseMode::Resample;
 
 		row2->getComponent<ComboBox>("offset")->setEnabled(resynthesise);
-		row2->getComponent<ComboBox>("numSlices")->setEnabled(resynthesise && converter->phaseMode != SampleMapToWavetableConverter::PhaseMode::DynamicPhase);
+		row2->getComponent<ComboBox>("numSlices")->setEnabled(resynthesise && converter->cd.phaseMode != SampleMapToWavetableConverter::PhaseMode::DynamicPhase);
 		row2->getComponent<ComboBox>("sourcelength")->setEnabled(!resynthesise);
 
 		row2->getComponent<ComboBox>("Noise")->setEnabled(resynthesise);
@@ -797,7 +797,7 @@ This will use Loris to separate the noise from the sinusoidal parts of the sampl
 		{
 			cancelCurrentTask();
 
-			converter->phaseMode = (SampleMapToWavetableConverter::PhaseMode)comboBoxThatHasChanged->getSelectedItemIndex();
+			converter->cd.phaseMode = (SampleMapToWavetableConverter::PhaseMode)comboBoxThatHasChanged->getSelectedItemIndex();
 
 			refreshEnablement();
 			
@@ -807,7 +807,7 @@ This will use Loris to separate the noise from the sinusoidal parts of the sampl
 		}
 		if (comboBoxThatHasChanged->getName() == "compression")
 		{
-			converter->useCompression = comboBoxThatHasChanged->getSelectedItemIndex();
+			converter->cd.useCompression = comboBoxThatHasChanged->getSelectedItemIndex();
 			return;
 		}
 		if (comboBoxThatHasChanged->getName() == "samplemap")
@@ -878,7 +878,7 @@ This will use Loris to separate the noise from the sinusoidal parts of the sampl
 		{
 			cancelCurrentTask();
 
-			converter->reverseOrder = comboBoxThatHasChanged->getSelectedItemIndex() == 1;
+			converter->cd.reverseOrder = comboBoxThatHasChanged->getSelectedItemIndex() == 1;
 		}
         
 		refreshPreview();
@@ -888,7 +888,7 @@ This will use Loris to separate the noise from the sinusoidal parts of the sampl
 	{
 		converter->exportAll();
 
-		if (converter->phaseMode == SampleMapToWavetableConverter::PhaseMode::Resample)
+		if (converter->cd.phaseMode == SampleMapToWavetableConverter::PhaseMode::Resample)
 		{
 			showStatusMessage("Wavetables exported with " + String(converter->cycleLength) + " cycle length");
 		}
@@ -2072,10 +2072,17 @@ public:
 
 		void apply(const Identifier& id)
 		{
+			auto value = propertyData.getProperty(id);
+
+			if (id == SampleIds::SampleStart)
+				addDelta(-int(value), { SampleIds::SampleEnd, SampleIds::LoopStart, SampleIds::LoopEnd });
+
 			for (auto f : sampleFiles)
-			{
+			{									
 				apply(id, f);
 			}
+			
+			propertyData.removeProperty(id, nullptr);
 		}
 
 		void apply(const Identifier& id, File& fileToUse)
@@ -2131,8 +2138,6 @@ public:
 				for (int i = 0; i < numChannels; i++)
 					FloatVectorOperations::copy(nb.getWritePointer(i), ob.getReadPointer(i, offset), nb.getNumSamples());
 
-				addDelta(-offset, { SampleIds::SampleEnd, SampleIds::LoopStart, SampleIds::LoopEnd });
-
 				std::swap(nb, ob);
 			}
 			else if (id == SampleIds::LoopXFade)
@@ -2149,7 +2154,6 @@ public:
 
 				for (int i = 0; i < numChannels; i++)
 					ob.addFromWithRamp(i, fadeOutStart, ob.getReadPointer(i, fadeInStart), xfadeSize, 0.0f, 1.0f);
-
 			}
 			else if (id == SampleIds::SampleEnd)
 			{
@@ -2290,7 +2294,6 @@ public:
 				}
 			}
 
-			propertyData.removeProperty(id, nullptr);
 			hlac::CompressionHelpers::dump(ob, fileToUse.getFullPathName(), sampleRate, bitDepth);
 		}
 
