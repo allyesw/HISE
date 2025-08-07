@@ -28,19 +28,17 @@ You have to use Terminal for this. Go to GitHub Desktop > Repository > Open in T
 3. Open `/projects/standalone/HISE Standalone.jucer`.
 
 4. ON MAC:
-	In the `hi_core` module, make sure the `USE_IPP` flag is set to *FALSE*.
 	In the `Xcode (macOS)` exporter tab, add the following to Extra Preprocessor Definitions:
 	`NUM_HARDCODED_FX_MODS=6 NUM_HARDCODED_POLY_FX_MODS=6`
 	In the `Xcode (macOS)` exporter tab, scroll to `Valid Architectures`, and make sure only `x86_64` is checked.
 
    ON WIN:
-   	In the `hi_core` module, make sure the `USE_IPP` flag is set to *TRUE*.
    	In the `Visual Studio 2022` exporter tab, add `NUM_HARDCODED_FX_MODS=6` and `NUM_HARDCODED_POLY_FX_MODS=6` to Extra Preprocessor Definitions.
    	In the `Release with Faust` tab, add "C:\Program Files (x86)\Intel\oneAPI\ipp\2021.10\include" to Header Search Paths. (NOTE: You'll have to do that when exporting plugins too.)
 
    ON BOTH:
    	In the `hi_faust` module, make sure `HISE_INCLUDE_FAUST` is enabled.
-   	In the `hi_faust_types` module, if you're using a faust version older than 2.54.0 (which I am NOT as of 1/16/25. Now on 2.77.3), also enable `FAUST_NO_WARNING_MESSAGES`.
+   	In the `hi_faust_types` module, if you're using a faust version older than 2.54.0 (which I am NOT as of 8/6/25. Now on 2.81.2), also enable `FAUST_NO_WARNING_MESSAGES`.
 
 5. Click `Save and Open in IDE`.
 
