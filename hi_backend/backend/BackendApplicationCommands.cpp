@@ -61,6 +61,16 @@ currentColumnMode(OneColumn)
 }
 
 
+void BackendCommandTarget::setCommandTarget(ApplicationCommandInfo& result, const String& name, bool active,
+	bool ticked, char shortcut, bool useShortCut, ModifierKeys mod)
+{
+	result.setInfo(name, name, "Unused", 0);
+	result.setActive(active); 
+	result.setTicked(ticked);
+
+	if (useShortCut) result.addDefaultKeypress(shortcut, mod);
+}
+
 void BackendCommandTarget::setEditor(BackendRootWindow *editor)
 {
 	bpe = dynamic_cast<BackendRootWindow*>(editor);
@@ -97,11 +107,15 @@ void BackendCommandTarget::getAllCommands(Array<CommandID>& commands)
 		MenuFileBrowseExamples,
 		MenuFileCreateRecoveryXml,
 		MenuProjectShowInFinder,
+		MenuFileShowHiseAppDataFolder,
+		MenuFileShowProjectAppDataFolder,
 		MenuFileSettings,
 		MenuExportCleanBuildDirectory,
 		MenuToolsCreateThirdPartyNode,
 		MenuFileExtractEmbeddeSnippetFiles,
 		MenuFileImportSnippet,
+		MenuExportSetupWizard,
+		MenuExportCompileProject,
 		MenuExportFileAsPlugin,
 		MenuExportFileAsEffectPlugin,
 		MenuExportFileAsMidiFXPlugin,
@@ -134,6 +148,7 @@ void BackendCommandTarget::getAllCommands(Array<CommandID>& commands)
 		MenuExportValidateUserPresets,
 		MenuExportCheckAllSampleMaps,
 		MenuExportCheckUnusedImages,
+		MenuExportCleanDspNetworkFiles,
 		MenuToolsForcePoolSearch,
 		MenuToolsConvertSampleMapToWavetableBanks,
 		MenuToolsConvertAllSamplesToMonolith,
@@ -148,7 +163,10 @@ void BackendCommandTarget::getAllCommands(Array<CommandID>& commands)
 		MenuToolsApplySampleMapProperties,
 		MenuToolsSimulateChangingBufferSize,
 		MenuToolsShowDspNetworkDllInfo,
+		MenuToolsReplaceScriptFXWithHardcodedFX,
         MenuToolsCreateRnboTemplate,
+		MenuToolsCreateGlobalCableCppCode,
+		MenuToolsCheckLatency,
 		MenuViewResetLookAndFeel,
 		MenuViewReset,
         MenuViewRotate,
@@ -199,6 +217,14 @@ void BackendCommandTarget::createMenuBarNames()
 
 void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationCommandInfo &result)
 {
+#if JUCE_WINDOWS
+	static const String fileBrowserName = "Explorer";
+#elif JUCE_MAC
+	static const String fileBrowserName = "Finder";
+#else
+	static const String fileBrowserName = "File Browser";
+#endif
+
 	result.categoryName = "Hidden";
 
 	switch (commandID)
@@ -293,17 +319,31 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
 		result.categoryName = "File";
 		break;
 	case MenuProjectShowInFinder:
-#if JUCE_WINDOWS
-        setCommandTarget(result, "Show Project folder in Explorer",
-#else
-		setCommandTarget(result, "Show Project folder in Finder",
-#endif
+        setCommandTarget(result, "Show Project folder in " + fileBrowserName,
+        GET_PROJECT_HANDLER(bpe->getMainSynthChain()).isActive(), false, 'X', false);
+		result.categoryName = "File";
+		break;
+	case MenuFileShowHiseAppDataFolder:
+        setCommandTarget(result, "Show HISE App data folder in " + fileBrowserName,
+        GET_PROJECT_HANDLER(bpe->getMainSynthChain()).isActive(), false, 'X', false);
+		result.categoryName = "File";
+		break;
+	case MenuFileShowProjectAppDataFolder:
+        setCommandTarget(result, "Show Project App Data folder in " + fileBrowserName,
         GET_PROJECT_HANDLER(bpe->getMainSynthChain()).isActive(), false, 'X', false);
 		result.categoryName = "File";
 		break;
 	case MenuToolsCreateThirdPartyNode:
 		setCommandTarget(result, "Create C++ third party node template", true, false, 'X', false);
 		result.categoryName = "Tools";
+		break;
+	case MenuExportSetupWizard:
+		setCommandTarget(result, "Setup Export Wizard", true, false, 'X', false);
+		result.categoryName = "Export";
+		break;
+	case MenuExportCompileProject:
+		setCommandTarget(result, "Compile project", true, false, 'X', false);
+		result.categoryName = "Export";
 		break;
     case MenuExportFileAsPlugin:
         setCommandTarget(result, "Export as Instrument (VSTi / AUi) plugin", true, false, 'X', false);
@@ -355,6 +395,10 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
 		break;
 	case MenuExportCleanBuildDirectory:
 		setCommandTarget(result, "Clean Build directory", true, false, 'X', false);
+		result.categoryName = "Export";
+		break;
+	case MenuExportCleanDspNetworkFiles:
+		setCommandTarget(result, "Clean DSP network files", true, false, 'X', false);
 		result.categoryName = "Export";
 		break;
 	case MenuFileImportSnippet:
@@ -491,6 +535,10 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
         setCommandTarget(result, "Create C++ template for RNBO patch", true, false, 'X', false);
         result.categoryName = "Tools";
         break;
+	case MenuToolsCheckLatency:
+        setCommandTarget(result, "Check latency of signal chain", true, false, 'X', false);
+        result.categoryName = "Tools";
+        break;
 	case MenuToolsConvertSampleMapToWavetableBanks:
 		setCommandTarget(result, "Show Wavetable Creator", true, false, 'X', false);
 		result.categoryName = "Tools";
@@ -520,11 +568,19 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
 		result.categoryName = "Tools";
 		break;
 	case MenuToolsRecordOneSecond:
-		setCommandTarget(result, "Record one second audio file", true, false, 'X', false);
+		setCommandTarget(result, "Render HISE output to disk", true, false, 'X', false);
 		result.categoryName = "Tools";
 		break;
 	case MenuToolsCreateRSAKeys:
 		setCommandTarget(result, "Create RSA Key pair", true, false, 'X', false);
+		result.categoryName = "Tools";
+		break;
+	case MenuToolsCreateGlobalCableCppCode:
+		setCommandTarget(result, "Create C++ code for global cables", true, false, 'X', false);
+		result.categoryName = "Tools";
+		break;
+	case MenuToolsReplaceScriptFXWithHardcodedFX:
+		setCommandTarget(result, "Replace Scriptnode modules with Hardcoded modules", true, false, 'X', false);
 		result.categoryName = "Tools";
 		break;
 	case MenuToolsConvertSVGToPathData:
@@ -632,6 +688,8 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
 	case MenuProjectNew:				Actions::createNewProject(bpe); updateCommands();  return true;
 	case MenuProjectLoad:				Actions::loadProject(bpe); updateCommands(); return true;
 	case MenuProjectShowInFinder:		Actions::showProjectInFinder(bpe); return true;
+	case MenuFileShowProjectAppDataFolder:	Actions::showAppDataFolder(bpe, true); return true;
+	case MenuFileShowHiseAppDataFolder:		Actions::showAppDataFolder(bpe, false); return true;
 	case MenuFileBrowseExamples:		Actions::showExampleBrowser(bpe); return true;
 	case MenuFileCreateRecoveryXml:		Actions::createRecoveryXml(bpe); return true;
 	case MenuFileSettings:				Actions::showFileProjectSettings(bpe); return true;
@@ -654,9 +712,11 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
 	case MenuToolsRecompile:            Actions::recompileAllScripts(bpe); return true;
 	case MenuToolsCheckCyclicReferences:Actions::checkCyclicReferences(bpe); return true;
 	case MenuToolsCreateExternalScriptFile:	Actions::createExternalScriptFile(bpe); updateCommands(); return true;
+	case MenuExportCompileProject: Actions::compileProject(bpe); return true;
 	case MenuExportValidateUserPresets:	Actions::validateUserPresets(bpe); return true;
 	case MenuExportRestoreToDefault:		Actions::restoreToDefault(bpe); return true;
 	case MenuExportCheckUnusedImages:	Actions::checkUnusedImages(bpe); return true;
+	case MenuExportSetupWizard:			Actions::setupExportWizard(bpe); return true;
 	case MenuToolsShowDspNetworkDllInfo: Actions::showNetworkDllInfo(bpe); return true;
 	case MenuToolsForcePoolSearch:		Actions::toggleForcePoolSearch(bpe); updateCommands(); return true;
 	case MenuToolsConvertSampleMapToWavetableBanks:	Actions::convertSampleMapToWavetableBanks(bpe); return true;
@@ -668,17 +728,19 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
 	case MenuExportUnloadAllAudioFiles:  Actions::unloadAllAudioFiles(bpe); return true;
 	case MenuToolsCreateRSAKeys:		Actions::createRSAKeys(bpe); return true;
 	case MenuToolsCreateDummyLicenseFile: Actions::createDummyLicenseFile(bpe); return true;
+	case MenuToolsCheckLatency:			Actions::checkLatency(bpe); return true;
 	case MenuExportCheckAllSampleMaps:	Actions::checkAllSamplemaps(bpe); return true;
     case MenuExportCheckPluginParameters:    Actions::checkPluginParameterSanity(bpe); return true;
+	case MenuExportCleanDspNetworkFiles: Actions::cleanDspNetworkFiles(bpe); return true;
     case MenuToolsCreateRnboTemplate:   Actions::createRnboTemplate(bpe); return true;
 	case MenuToolsImportArchivedSamples: Actions::importArchivedSamples(bpe); return true;
-	case MenuToolsRecordOneSecond:		bpe->owner->getDebugLogger().startRecording(); return true;
+	case MenuToolsRecordOneSecond:		Actions::exportAudio(bpe); return true;
     case MenuToolsEnableDebugLogging:	bpe->owner->getDebugLogger().toggleLogging(); updateCommands(); return true;
 	case MenuToolsApplySampleMapProperties: Actions::applySampleMapProperties(bpe); return true;
 	case MenuToolsConvertSVGToPathData:	Actions::convertSVGToPathData(bpe); return true;
     case MenuToolsBroadcasterWizard:
     {
-        auto s = new multipage::library::BroadcasterWizard(bpe);
+        auto s = new multipage::library::EncodedBroadcasterWizard(bpe);//multipage::library::BroadcasterWizard(bpe);
         s->setModalBaseWindowComponent(bpe);
         return true;
     }
@@ -693,45 +755,42 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
     case MenuViewGotoUndo: bpe->getBackendProcessor()->getLocationUndoManager()->undo(); updateCommands(); return true;
     case MenuViewGotoRedo:  bpe->getBackendProcessor()->getLocationUndoManager()->redo(); updateCommands(); return true;
 	case MenuExportFileAsPlugin:
-    {
-        CompileExporter exporter(bpe->getMainSynthChain());
-        exporter.exportMainSynthChainAsInstrument();
+		Actions::exportProject(bpe, (int)CompileExporter::BuildOption::AllPluginFormatsInstrument);
         return true;
-    }
 	case MenuExportFileAsEffectPlugin:
-    {
-        CompileExporter exporter(bpe->getMainSynthChain());
-        exporter.exportMainSynthChainAsFX();
+		Actions::exportProject(bpe, (int)CompileExporter::BuildOption::AllPluginFormatsFX);
         return true;
-    }
 	case MenuExportFileAsStandaloneApp:
-    {
-        CompileExporter exporter(bpe->getMainSynthChain());
-        exporter.exportMainSynthChainAsStandaloneApp();
+		Actions::exportProject(bpe, (int)CompileExporter::BuildOption::StandaloneLinux);
         return true;
-    }
 	case MenuExportFileAsMidiFXPlugin:
-    {
-        CompileExporter exporter(bpe->getMainSynthChain());
-        exporter.exportMainSynthChainAsMidiFx();
+    	Actions::exportProject(bpe, (int)CompileExporter::BuildOption::AllPluginFormatsMidiFX);
         return true;
-    }
 	case MenuExportCompileNetworksAsDll: Actions::compileNetworksToDll(bpe); return true;
     case MenuExportFileAsSnippet:        Actions::exportFileAsSnippet(bpe); return true;
 	case MenuExportProjectAsExpansion:				Actions::exportHiseProject(bpe); return true;
 	case MenuExportSampleDataForInstaller: Actions::exportSampleDataForInstaller(bpe); return true;
 	case MenuToolsWavetablesToMonolith: Actions::exportWavetablesToMonolith(bpe); return true;
+	case MenuToolsCreateGlobalCableCppCode: Actions::createGlobalCableCppCode(bpe); return true;
 	case MenuExportCompileFilesInPool:	Actions::exportCompileFilesInPool(bpe); return true;
 	case MenuViewResetLookAndFeel:		Actions::resetLookAndFeel(bpe); return true;
     case MenuViewClearConsole:         owner->getConsoleHandler().clearConsole(); return true;
 	case MenuHelpShowAboutPage:			Actions::showAboutPage(bpe); return true;
     case MenuHelpCheckVersion:          Actions::checkVersion(bpe); return true;
+	case MenuToolsReplaceScriptFXWithHardcodedFX: Actions::replaceScriptModules(bpe); return true;
 	case MenuHelpShowDocumentation:		Actions::showDocWindow(bpe); return true;
 	}
 
 	return false;
 }
 
+void BackendCommandTarget::updateCommands()
+{
+	mainCommandManager->commandStatusChanged();
+	createMenuBarNames();
+
+	menuItemsChanged();
+}
 
 
 PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const String &menuName)
@@ -791,8 +850,9 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 			p.addSectionHeader("Project Management");
 			ADD_MENU_ITEM(MenuProjectNew);
 			ADD_MENU_ITEM(MenuProjectLoad);
+
 			
-			ADD_MENU_ITEM(MenuProjectShowInFinder);
+
 			
 
 			PopupMenu recentProjects;
@@ -832,6 +892,14 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 			p.addSubMenu(menuTitle, recentProjects);
 
 			p.addSeparator();
+
+			ADD_MENU_ITEM(MenuProjectShowInFinder);
+			ADD_MENU_ITEM(MenuFileShowHiseAppDataFolder);
+			ADD_MENU_ITEM(MenuFileShowProjectAppDataFolder);
+
+			p.addSeparator();
+
+			
 
 			p.addSectionHeader("File Management");
 
@@ -932,7 +1000,12 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 		}
 		else 
 		{
+			ADD_MENU_ITEM(MenuExportSetupWizard);
+
+			ADD_MENU_ITEM(MenuExportCompileProject);
+
 			p.addSectionHeader("Export As");
+
 			ADD_MENU_ITEM(MenuExportFileAsPlugin);
 			ADD_MENU_ITEM(MenuExportFileAsEffectPlugin);
 			ADD_MENU_ITEM(MenuExportFileAsMidiFXPlugin);
@@ -960,6 +1033,7 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 			ADD_MENU_ITEM(MenuExportUnloadAllSampleMaps);
 			ADD_MENU_ITEM(MenuExportUnloadAllAudioFiles);
 			ADD_MENU_ITEM(MenuExportCleanBuildDirectory);
+			ADD_MENU_ITEM(MenuExportCleanDspNetworkFiles);
 
 			p.addSeparator();
 
@@ -1018,10 +1092,13 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 			p.addSectionHeader("DSP Tools");
 
 			ADD_MENU_ITEM(MenuToolsShowDspNetworkDllInfo);
+			ADD_MENU_ITEM(MenuToolsReplaceScriptFXWithHardcodedFX);
 			ADD_MENU_ITEM(MenuToolsRecordOneSecond);
 			ADD_MENU_ITEM(MenuToolsSimulateChangingBufferSize);
 	        ADD_MENU_ITEM(MenuToolsCreateRnboTemplate);
 			ADD_MENU_ITEM(MenuToolsCreateThirdPartyNode);
+			ADD_MENU_ITEM(MenuToolsCreateGlobalCableCppCode);
+			ADD_MENU_ITEM(MenuToolsCheckLatency);
 			p.addSeparator();
 			p.addSectionHeader("License Management");
 			ADD_MENU_ITEM(MenuToolsCreateRSAKeys);
@@ -1312,6 +1389,32 @@ void BackendCommandTarget::Actions::loadSnippet(BackendRootWindow* bpe, const St
 
 	if (v.isValid())
 	{
+		auto hash = v["Hash"].toString();
+
+		WeakReference<Processor> safeP(bpe->getMainSynthChain());
+
+		if(hash.isNotEmpty())
+		{
+			GitHashManager::checkHash(hash, [safeP](const var& commitObj)
+			{
+				String message;
+
+				auto hash = commitObj["sha"].toString();
+
+				auto date = commitObj["commit"]["author"]["date"].toString();
+
+				auto d = Time::fromISO8601(date);
+
+				message << "Snippet loaded that was created with git commit \n";
+				message << "> hash: " << hash.substring(0, 8) << "\n";
+				message << "> date: " << d.toString(true, true, false, true) << "\n";
+				message << "> message: " << commitObj["commit"]["message"].toString() << "\n";
+				message << "> url: " << "https://github.com/christophhart/HISE/commit/" << hash;
+				
+				debugToConsole(safeP, message);
+			});
+		}
+
 		bpe->loadNewContainer(v);
 	}
 }
@@ -1588,7 +1691,12 @@ void BackendCommandTarget::Actions::closeAllChains(BackendRootWindow *bpe)
 
 void BackendCommandTarget::Actions::showAboutPage(BackendRootWindow * bpe)
 {
-	bpe->getMainTopBar()->togglePopup(MainTopBar::PopupType::About, true);
+    auto ap = new multipage::library::AboutWindow(bpe);
+    
+    
+    ap->setModalBaseWindowComponent(bpe);
+    
+//	bpe->getMainTopBar()->togglePopup(MainTopBar::PopupType::About, true);
 
 	//bpe->mainEditor->aboutPage->showAboutPage();
 }
@@ -1628,13 +1736,6 @@ void BackendCommandTarget::Actions::setCompileTimeOut(BackendRootWindow * /*bpe*
 	jassertfalse;
 }
 
-void BackendCommandTarget::Actions::toggleUseBackgroundThreadsForCompiling(BackendRootWindow * bpe)
-{
-	const bool lastState = bpe->getBackendProcessor()->isUsingBackgroundThreadForCompiling();
-
-	bpe->getBackendProcessor()->setShouldUseBackgroundThreadForCompiling(!lastState);
-}
-
 void BackendCommandTarget::Actions::toggleCompileScriptsOnPresetLoad(BackendRootWindow * bpe)
 {
 	const bool lastState = bpe->getBackendProcessor()->isCompilingAllScriptsOnPresetLoad();
@@ -1652,7 +1753,9 @@ String BackendCommandTarget::Actions::exportFileAsSnippet(BackendRootWindow* bpe
 	MainController::ScopedEmbedAllResources sd(bp);
     
 	ValueTree v = bp->getMainSynthChain()->exportAsValueTree();
-	
+
+	v.setProperty("Hash", String(PREVIOUS_HISE_COMMIT), nullptr);
+
 	auto scriptRootFolder = bp->getCurrentFileHandler().getSubDirectory(FileHandlerBase::Scripts);
 	auto snexRootFolder = BackendDllManager::getSubFolder(bp, BackendDllManager::FolderSubType::CodeLibrary);
 
@@ -1991,25 +2094,69 @@ void BackendCommandTarget::Actions::loadProject(BackendRootWindow *bpe)
 
 DialogWindowWithBackgroundThread* BackendCommandTarget::Actions::importProject(BackendRootWindow* bpe)
 {
-	auto importWindow = new ProjectImporter(bpe);
+	auto importWindow = new multipage::library::NewProjectCreator(bpe); 
 	importWindow->setModalBaseWindowComponent(bpe);
 
-	return importWindow;
+	return nullptr;
 }
+
+void BackendCommandTarget::Actions::compileProject(BackendRootWindow* bpe)
+{
+	auto cw = new multipage::library::CompileProjectDialog(bpe);
+	cw->setModalBaseWindowComponent(bpe);
+}
+
+struct HeadlessImporter: public ImporterBase,
+                         public Thread
+{
+	HeadlessImporter(BackendRootWindow* bpe, const File& projectRoot):
+	  ImporterBase(bpe),
+	  Thread("Headless Import")
+	{};
+
+	File projectRoot;
+
+	File getProjectFolder() const override { return projectRoot; }
+	void showStatusMessageBase(const String& message) override
+	{
+		DBG(message);
+	}
+
+	void createNewProjectFromFolder(const File& folder)
+	{
+		projectRoot = folder;
+		auto& handler = GET_PROJECT_HANDLER(bpe->getMainSynthChain());
+
+		if(!projectRoot.isDirectory())
+			handler.createNewProject(getProjectFolder(), bpe);
+		handler.setWorkingProject(getProjectFolder(), true);
+	}
+
+	void import(const File& sourceFile)
+	{
+		extractHxi(sourceFile);
+		createProjectData();
+	}
+
+	void run() override
+	{
+		
+	}
+
+	DialogWindowWithBackgroundThread::LogData logData;
+
+	DialogWindowWithBackgroundThread::LogData* getLogData() override { return &logData; }
+	Thread* getThreadToUse() override { return this; }
+	double& getJobProgress() override { return progress; }
+
+	double progress = 0;
+};
 
 void BackendCommandTarget::Actions::extractProject(BackendRootWindow* bpe, const File& newProjectRoot, const File& sourceFile)
 {
-	auto importWindow = new ProjectImporter(bpe);
-	importWindow->setModalBaseWindowComponent(bpe);
+	HeadlessImporter imp(bpe, newProjectRoot);
 
-	jassert(newProjectRoot.isDirectory());
-	jassert(sourceFile.existsAsFile());
-
-	importWindow->newProjectFolder = newProjectRoot;
-	importWindow->sourceType = ProjectImporter::SourceType::Import;
-	importWindow->header->importFile = sourceFile;
-
-	importWindow->runThread();
+	imp.import(sourceFile);
 }
 
 void BackendCommandTarget::Actions::convertSVGToPathData(BackendRootWindow* bpe)
@@ -2037,13 +2184,63 @@ void BackendCommandTarget::Actions::loadFirstXmlAfterProjectSwitch(BackendRootWi
 	}
 }
 
+void revealFirstFile(const File& f)
+{
+	auto folders = f.findChildFiles(File::findDirectories, false, "*");
+	folders.sort();
+
+	if(!folders.isEmpty())
+	{
+		folders.getFirst().revealToUser();
+		return;
+	}
+		
+
+	auto files = f.findChildFiles(File::findFiles, false, "*");
+	files.sort();
+
+	if(!files.isEmpty())
+	{
+		files.getFirst().revealToUser();
+		return;
+	}
+		
+	if(f.isDirectory() || f.existsAsFile())
+	{
+		f.revealToUser();
+		return;
+	}
+	else
+	{
+		PresetHandler::showMessageWindow("File does not exist", "The file " + f.getFullPathName() + " does not exist", PresetHandler::IconType::Warning);
+	}
+	
+}
+
+void BackendCommandTarget::Actions::showAppDataFolder(BackendRootWindow* bpe, bool getProjectAppData)
+{
+	if(!getProjectAppData)
+	{
+		revealFirstFile(ProjectHandler::getAppDataDirectory(bpe->getBackendProcessor()));
+	}
+	else
+	{
+		auto f = ProjectHandler::getAppDataRoot(bpe->getBackendProcessor());
+
+		auto company = GET_HISE_SETTING(bpe->getBackendProcessor()->getMainSynthChain(), HiseSettings::User::Company);
+		auto project = GET_HISE_SETTING(bpe->getBackendProcessor()->getMainSynthChain(), HiseSettings::Project::Name);
+
+		f = f.getChildFile(company.toString()).getChildFile(project.toString());
+		revealFirstFile(f);
+	}
+}
 
 
 void BackendCommandTarget::Actions::showProjectInFinder(BackendRootWindow *bpe)
 {
 	if (GET_PROJECT_HANDLER(bpe->getMainSynthChain()).isActive())
 	{
-		GET_PROJECT_HANDLER(bpe->getMainSynthChain()).getWorkDirectory().revealToUser();
+		revealFirstFile(GET_PROJECT_HANDLER(bpe->getMainSynthChain()).getWorkDirectory());
 	}
 }
 
@@ -2452,8 +2649,23 @@ juce::Result BackendCommandTarget::Actions::createSampleArchive(BackendProcessor
 
 void BackendCommandTarget::Actions::compileNetworksToDll(BackendRootWindow* bpe)
 {
+	auto exportIsReady = (bool)bpe->getBackendProcessor()->getSettingsObject().getSetting(HiseSettings::Compiler::ExportSetup);
+
+	if(!exportIsReady)
+	{
+		if(PresetHandler::showYesNoWindow("System not configured", "Your system has not been setup for export. Do you want to launch the Export Setup wizard?"))
+			Actions::setupExportWizard(bpe);
+
+		return;
+	}
+
+#if JUCE_WINDOWS || JUCE_MAC
+	auto s = new multipage::library::NetworkCompiler(bpe);
+	s->setModalBaseWindowComponent(bpe);
+#else
 	auto s = new DspNetworkCompileExporter(bpe, bpe->getBackendProcessor());
 	s->setModalBaseWindowComponent(bpe);
+#endif
 }
 
 void BackendCommandTarget::Actions::cleanBuildDirectory(BackendRootWindow * bpe)
@@ -3025,6 +3237,14 @@ void BackendCommandTarget::Actions::extractEmbeddedFilesFromSnippet(BackendRootW
 
 void BackendCommandTarget::Actions::showExampleBrowser(BackendRootWindow* bpe)
 {
+	if(!bpe->getBackendProcessor()->getCurrentFileHandler().getRootFolder().isDirectory())
+	{
+		auto f = File(GET_HISE_SETTING(bpe->getMainSynthChain(), HiseSettings::Compiler::DefaultProjectFolder).toString()).getChildFile("My first project");
+
+		HeadlessImporter hi(bpe, f);
+		hi.createNewProjectFromFolder(f);
+	}
+
 	auto dm = bpe->getBackendProcessor()->deviceManager;
 	auto cb = bpe->getBackendProcessor()->callback;
 
@@ -3060,6 +3280,135 @@ void BackendCommandTarget::Actions::showExampleBrowser(BackendRootWindow* bpe)
 
 	nw->setCurrentlyActiveProcessor();
 	
+}
+
+namespace multipage
+{
+	
+
+
+}
+
+
+void BackendCommandTarget::Actions::setupExportWizard(BackendRootWindow* bpe)
+{
+	auto np = new multipage::library::ExportSetupWizard(bpe);
+	np->setModalBaseWindowComponent(bpe);
+
+	
+}
+
+void BackendCommandTarget::Actions::exportProject(BackendRootWindow* bpe, int buildOption)
+{
+	auto exportIsReady = (bool)bpe->getBackendProcessor()->getSettingsObject().getSetting(HiseSettings::Compiler::ExportSetup);
+
+	#if !JUCE_LINUX
+	if(!exportIsReady)
+	{
+		PresetHandler::showMessageWindow("System not configured", "This computer is not setup for export yet. Please run the Export Wizard (**Tools -> Setup Export Wizard**) in order to silence this message.");
+	}
+	#endif
+
+	CompileExporter exporter(bpe->getMainSynthChain());
+
+	switch((CompileExporter::BuildOption)buildOption)
+	{
+	case CompileExporter::BuildOption::AllPluginFormatsInstrument:
+		exporter.exportMainSynthChainAsInstrument();
+		break;
+	case CompileExporter::BuildOption::AllPluginFormatsFX:
+		exporter.exportMainSynthChainAsFX();
+		break;
+	case CompileExporter::BuildOption::AllPluginFormatsMidiFX:
+		exporter.exportMainSynthChainAsMidiFx();
+		break;
+	case CompileExporter::BuildOption::StandaloneLinux:
+		exporter.exportMainSynthChainAsStandaloneApp();
+		break;
+	}
+}
+
+void BackendCommandTarget::Actions::cleanDspNetworkFiles(BackendRootWindow* bpe)
+{
+	auto np = new multipage::library::CleanDspNetworkFiles(bpe);
+	np->setModalBaseWindowComponent(bpe);
+}
+
+void BackendCommandTarget::Actions::createGlobalCableCppCode(BackendRootWindow* bpe)
+{
+	auto rm = dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(bpe->getBackendProcessor()->getGlobalRoutingManager());
+
+	if(rm == nullptr)
+	{
+		PresetHandler::showMessageWindow("No global cables present", "You need to add global cables before using this method", PresetHandler::IconType::Error);
+		return;
+	}
+
+	auto cableList = rm->getIdList(scriptnode::routing::GlobalRoutingManager::SlotBase::SlotType::Cable);
+
+	if(cableList.isEmpty())
+	{
+		PresetHandler::showMessageWindow("No global cables present", "You need to add global cables before using this method", PresetHandler::IconType::Error);
+		return;
+	}
+
+	String code;
+
+	code << "// Use this enum to refer to the cables, eg. this->setGlobalCableValue<GlobalCables::" << cppgen::Helpers::getValidCppVariableName(cableList[0]) << ">(0.4)\n";
+	code << "enum class GlobalCables\n{\n";
+
+	for(int i = 0; i < cableList.size(); i++)
+	{
+		code << "\t" << cppgen::Helpers::getValidCppVariableName(cableList[i]) << " = " << String(i);
+
+		if(i != cableList.size()-1)
+			code << ',';
+
+		code << "\n";
+	}
+
+	code <<"};\n";
+
+	code << "// Subclass your node from this\n";
+	code << "using cable_manager_t = routing::global_cable_cpp_manager<";
+	String nl(",\n                                                          ");
+
+	for(int i = 0; i < cableList.size(); i++)
+	{
+		code << "SN_GLOBAL_CABLE(" << String(cableList[i].hashCode()) << ")";
+				
+		if(i != cableList.size()-1)
+			code << nl;
+	}
+
+	code << ">;\n";
+
+	SystemClipboard::copyTextToClipboard(code);
+
+	auto chain = bpe->getBackendProcessor()->getMainSynthChain();
+
+	debugToConsole(chain, "Copied code to clipboard:");
+	debugToConsole(chain, code);
+}
+
+void BackendCommandTarget::Actions::exportAudio(BackendRootWindow* bpe)
+{
+	auto n = new multipage::library::HiseAudioExporter(bpe);
+	bpe->setModalComponent(n);
+}
+
+void BackendCommandTarget::Actions::replaceScriptModules(BackendRootWindow* bpe)
+{
+	auto b = new multipage::library::ScriptModuleReplacer(bpe);
+	bpe->setModalComponent(b);		
+}
+
+void BackendCommandTarget::Actions::checkLatency(BackendRootWindow* bpe)
+{
+	if(PresetHandler::showYesNoWindow("Check latency", "This will send a short impulse through the signal chain to measure the latency of your DSP processing.\n> Turn down your speaker and make sure that there is no sound from a reverb trail or sound generator as this will mess up the measurements.", PresetHandler::IconType::Warning))
+	{
+		bpe->getBackendProcessor()->checkLatency();
+	}
 }
 
 #undef REPLACE_WILDCARD
@@ -3190,4 +3539,40 @@ String XmlBackupFunctions::getSanitiziedName(const String &id)
 	return id.removeCharacters(" .()");
 }
 
+void GitHashManager::checkHash(const String& hashToUse,
+	const std::function<void(const var&)>& finishCallbackWithNextHash)
+{
+	Thread::launch([hashToUse, finishCallbackWithNextHash]()
+	{
+		var json;
+
+		URL u("https://api.github.com/repos/christoph-hart/HISE/commits");
+    
+		auto s = u.readEntireTextStream();
+	    
+		auto ok = JSON::parse(s, json);
+		    
+		if(auto list = json.getArray())
+		{
+			for(int i = 0; i < list->size(); i++)
+			{
+				auto thisSha = list->getUnchecked(i)["sha"].toString();
+		            
+				if(thisSha == hashToUse)
+				{
+					auto nextIndex = i-1;
+		                
+					if(nextIndex >= 0 && isPositiveAndBelow(nextIndex, list->size()))
+					{
+						finishCallbackWithNextHash(list->getUnchecked(nextIndex));
+					}
+		                
+					break;
+				}
+			}
+		}
+	});
+
+	    
+}
 } // namespace hise

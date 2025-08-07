@@ -45,6 +45,7 @@ struct NodeBase::Wrapper
 	API_VOID_METHOD_WRAPPER_2(NodeBase, setParent);
 	API_METHOD_WRAPPER_2(NodeBase, connectTo);
 	API_VOID_METHOD_WRAPPER_1(NodeBase, connectToBypass);
+	API_METHOD_WRAPPER_1(NodeBase, getOrCreateParameter);
 	API_METHOD_WRAPPER_1(NodeBase, getParameter);
     API_METHOD_WRAPPER_3(NodeBase, setComplexDataIndex);
 	API_METHOD_WRAPPER_0(NodeBase, getNumParameters);
@@ -52,6 +53,30 @@ struct NodeBase::Wrapper
 };
 
 
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+struct DspNetworkHeatmapGenerator: public DebugSession::ProfileDataSource::HeatmapGenerator<NodeBase>
+{
+	DspNetworkHeatmapGenerator(NodeBase* rootNode):
+	  HeatmapGenerator<NodeBase>(rootNode)
+	{};
+
+	DebugSession::ProfileDataSource* getSourceFromDataType(NodeBase* d) override
+	{
+		return d->profileData.get();
+	}
+
+	int getNumChildren(NodeBase* d) const override
+	{
+		return d->getValueTree().getChildWithName(PropertyIds::Nodes).getNumChildren();
+	}
+
+	NodeBase* getChild(NodeBase* n, int index) override
+	{
+		auto children = n->getValueTree().getChildWithName(PropertyIds::Nodes);
+		return n->getRootNetwork()->getNodeForValueTree(children.getChild(index));
+	}
+};
+#endif
 
 NodeBase::NodeBase(DspNetwork* rootNetwork, ValueTree data_, int numConstants_) :
 	ConstScriptingObject(rootNetwork->getScriptProcessor(), 8),
@@ -59,12 +84,23 @@ NodeBase::NodeBase(DspNetwork* rootNetwork, ValueTree data_, int numConstants_) 
 	v_data(data_),
 	helpManager(this, data_),
 	currentId(v_data[PropertyIds::ID].toString()),	
-	subHolder(rootNetwork->getCurrentHolder())
+	subHolder(rootNetwork->getCurrentHolder()),
+	profileData(new DebugSession::ProfileDataSource())
 {
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	profileData->name = getId();
+	profileData->preferredDomain = DebugSession::ProfileDataSource::TimeDomain::CpuUsage;
+	profileData->locationString = dynamic_cast<Processor*>(getScriptProcessor())->getId() + "." + profileData->name;
+	profileData->sourceType = DebugSession::ProfileDataSource::SourceType::Scriptnode;
+#endif
+
 	if (!v_data.hasProperty(PropertyIds::Bypassed))
 		v_data.setProperty(PropertyIds::Bypassed, false, getUndoManager());
 
-	bypassListener.setCallback(data_, 
+    if(!v_data.hasProperty(PropertyIds::Name))
+        v_data.setProperty(PropertyIds::Name, v_data[PropertyIds::ID], getUndoManager());
+    
+	bypassListener.setCallback(data_,
 							   PropertyIds::Bypassed, 
 							   valuetree::AsyncMode::Synchronously, 
 							   BIND_MEMBER_FUNCTION_2(NodeBase::updateBypassState));
@@ -79,6 +115,7 @@ NodeBase::NodeBase(DspNetwork* rootNetwork, ValueTree data_, int numConstants_) 
 	ADD_API_METHOD_1(setBypassed);
 	ADD_API_METHOD_0(isBypassed);
 	ADD_API_METHOD_2(setParent);
+	ADD_API_METHOD_1(getOrCreateParameter);
 	ADD_API_METHOD_1(getParameter);
 	ADD_API_METHOD_2(connectTo);
 	ADD_API_METHOD_1(connectToBypass);
@@ -88,6 +125,8 @@ NodeBase::NodeBase(DspNetwork* rootNetwork, ValueTree data_, int numConstants_) 
 
 	for (auto c : getPropertyTree())
 		addConstant(c[PropertyIds::ID].toString(), c[PropertyIds::ID]);
+
+	registerStreamCreator(this);
 }
 
 NodeBase::~NodeBase()
@@ -327,15 +366,32 @@ juce::UndoManager* NodeBase::getUndoManager(bool returnIfPending) const
 
 juce::Rectangle<int> NodeBase::getBoundsToDisplay(Rectangle<int> originalHeight) const
 {
+	auto titleWidth = GLOBAL_BOLD_FONT().getStringWidthFloat(getName());
+	auto minWidth = jmax<int>(UIValues::NodeWidth, titleWidth + UIValues::HeaderHeight * 4);
+
 	if (v_data[PropertyIds::Folded])
-		originalHeight = originalHeight.withHeight(UIValues::HeaderHeight).withWidth(UIValues::NodeWidth);
-	
+	{
+		
+		originalHeight = originalHeight.withHeight(UIValues::HeaderHeight).withWidth(minWidth);
+	}
+
+	if(originalHeight.getWidth() < minWidth)
+		originalHeight.setWidth(minWidth);
+
 	auto helpBounds = helpManager.getHelpSize().toNearestInt();
 
 	if (!helpBounds.isEmpty())
 	{
-		originalHeight.setWidth(originalHeight.getWidth() + helpBounds.getWidth());
-		originalHeight.setHeight(jmax<int>(originalHeight.getHeight(), helpBounds.getHeight()));
+		if(!helpManager.isHelpBelow())
+		{
+			originalHeight.setWidth(originalHeight.getWidth() + helpBounds.getWidth());
+			originalHeight.setHeight(jmax<int>(originalHeight.getHeight(), helpBounds.getHeight()));
+		}
+		else
+		{
+			originalHeight.setWidth(jmax<int>(originalHeight.getWidth(), helpBounds.getWidth()));
+			originalHeight.setHeight(originalHeight.getHeight() + helpBounds.getHeight());
+		}
 	}
 
 	if (getRootNetwork()->getExceptionHandler().getErrorMessage(this).isNotEmpty())
@@ -350,7 +406,12 @@ juce::Rectangle<int> NodeBase::getBoundsWithoutHelp(Rectangle<int> originalHeigh
 {
 	auto helpBounds = helpManager.getHelpSize().toNearestInt();
 
-	originalHeight.removeFromRight(helpBounds.getWidth());
+	auto isBelow = helpManager.isHelpBelow();
+
+	if(isBelow)
+		originalHeight.removeFromBottom(helpBounds.getHeight());
+	else
+		originalHeight.removeFromRight(helpBounds.getWidth());
 
 	if (v_data[PropertyIds::Folded])
 		return originalHeight.withHeight(UIValues::HeaderHeight);
@@ -503,28 +564,6 @@ bool NodeBase::isClone() const
 	return findParentNodeOfType<CloneNode>() != nullptr;
 }
 
-void NodeBase::setEmbeddedNetwork(NodeBase::Holder* n)
-{
-	embeddedNetwork = n;
-
-	if (getEmbeddedNetwork()->canBeFrozen())
-	{
-		setDefaultValue(PropertyIds::Frozen, true);
-		frozenListener.setCallback(v_data, { PropertyIds::Frozen }, valuetree::AsyncMode::Synchronously,
-			BIND_MEMBER_FUNCTION_2(NodeBase::updateFrozenState));
-	}
-}
-
-scriptnode::DspNetwork* NodeBase::getEmbeddedNetwork()
-{
-	return static_cast<DspNetwork*>(embeddedNetwork.get());
-}
-
-const scriptnode::DspNetwork* NodeBase::getEmbeddedNetwork() const
-{
-	return static_cast<const DspNetwork*>(embeddedNetwork.get());
-}
-
 ValueTree findBypassConnectionTree(const ValueTree& v, const String& nodeId)
 {
 	if (v.getType() == PropertyIds::Connection)
@@ -590,22 +629,6 @@ String NodeBase::getDynamicBypassSource(bool forceUpdate /*= true*/) const
 	}
 
 	return dynamicBypassId;
-}
-
-void NodeBase::updateFrozenState(Identifier id, var newValue)
-{
-	if (auto n = getEmbeddedNetwork())
-	{
-		try
-		{
-			if (n->canBeFrozen())
-				n->setUseFrozenNode((bool)newValue);
-		}
-		catch (Error& e)
-		{
-			getRootNetwork()->getExceptionHandler().addError(this, e);
-		}
-	}
 }
 
 Colour NodeBase::getColour() const
@@ -674,36 +697,64 @@ var NodeBase::getParameter(var indexOrId) const
 {
 	Parameter* p = nullptr;
 
-	if (indexOrId.isString())
+	if(auto obj = indexOrId.getDynamicObject())
+	{
+		auto id = obj->getProperty(PropertyIds::ID).toString();
+		p = getParameterFromName(id);
+	}
+	else if (indexOrId.isString())
 		p = getParameterFromName(indexOrId.toString());
 	else
 		p = getParameterFromIndex((int)indexOrId);
 
 	if (p != nullptr)
 		return var(p);
-	else
+
+	return var();
+}
+
+var NodeBase::getOrCreateParameter(var indexOrId) const
+{
+	auto existing = getParameter(indexOrId);
+
+	if(existing.isObject())
+		return existing;
+
+	if(auto nc = dynamic_cast<const NodeContainer*>(this))
     {
-        if(auto nc = dynamic_cast<const NodeContainer*>(this))
-        {
-            auto name = indexOrId.toString();
-            
-            ValueTree p(PropertyIds::Parameter);
-            p.setProperty(PropertyIds::ID, name, nullptr);
-            p.setProperty(PropertyIds::MinValue, 0.0, nullptr);
-            p.setProperty(PropertyIds::MaxValue, 1.0, nullptr);
+        auto name = indexOrId[PropertyIds::ID].toString();
+		auto idSet = RangeHelpers::getIdSetForJSON(indexOrId);
+		auto rng = RangeHelpers::getDoubleRange(indexOrId, idSet);
 
-            PropertyIds::Helpers::setToDefault(p, PropertyIds::StepSize);
-            PropertyIds::Helpers::setToDefault(p, PropertyIds::SkewFactor);
+        ValueTree p(PropertyIds::Parameter);
 
-            p.setProperty(PropertyIds::Value, 1.0, nullptr);
-            getValueTree().getChildWithName(PropertyIds::Parameters).addChild(p, -1, getUndoManager());
-            
-            return var(getParameterFromName(name));
-        }
+        p.setProperty(PropertyIds::ID, name, nullptr);
+
+		auto defaultValue = RangeHelpers::getDefaultValue(indexOrId);
+
+		RangeHelpers::storeDoubleRange(p, rng, nullptr);
+
+		if(indexOrId.hasProperty("mode"))
+			p.setProperty(PropertyIds::TextToValueConverter, indexOrId["mode"], nullptr);
+
+		PropertyIds::Helpers::setToDefault(p, PropertyIds::ExternalModulation);
+
+		if(defaultValue.first)
+		{
+			p.setProperty(PropertyIds::DefaultValue, defaultValue.second, nullptr);
+			p.setProperty(PropertyIds::Value, defaultValue.second, nullptr);
+		}
         
-        return {};
+        getValueTree().getChildWithName(PropertyIds::Parameters).addChild(p, -1, getUndoManager());
+        
+        return var(getParameterFromName(name));
     }
-		
+	else
+	{
+		reportScriptError("Can't create parameter for non-container node");
+	}
+
+	return {};
 }
 
 struct Parameter::Wrapper
@@ -862,7 +913,7 @@ bool NodeBase::setComplexDataIndex(String dataType, int dataSlot, int indexValue
 	if(!v.isValid())
 		return false;
         
-	v.setProperty(PropertyIds::Index, dataSlot, getUndoManager());
+	v.setProperty(PropertyIds::Index, indexValue, getUndoManager());
         
 	return true;
 }
@@ -987,6 +1038,12 @@ void Parameter::setDynamicParameter(parameter::dynamic_base::Ptr ownedNew)
 {
 	// We don't need to lock if the network isn't active yet...
 	bool useLock = parent->isActive(true) && parent->getRootNetwork()->isInitialised();
+
+	auto ph = parent->getRootNetwork()->getParentHolder();
+
+	if(ph == nullptr)
+		return;
+
 	SimpleReadWriteLock::ScopedWriteLock sl(parent->getRootNetwork()->getConnectionLock(), useLock);
 
 	dynamicParameter = ownedNew;
@@ -1206,6 +1263,7 @@ struct DragHelpers
 void NodeBase::connectToBypass(var dragDetails)
 {
 	auto sourceParameterTree = DragHelpers::getValueTreeOfSourceParameter(this, dragDetails);
+	auto modNode = DragHelpers::getModulationSource(this, dragDetails);
 
 	if (sourceParameterTree.isValid())
 	{
@@ -1213,11 +1271,18 @@ void NodeBase::connectToBypass(var dragDetails)
 		newC.setProperty(PropertyIds::NodeId, getId(), nullptr);
 		newC.setProperty(PropertyIds::ParameterId, PropertyIds::Bypassed.toString(), nullptr);
 
-		String connectionId = DragHelpers::getSourceNodeId(dragDetails) + "." + 
-							  DragHelpers::getSourceParameterId(dragDetails);
-
 		ValueTree connectionTree = sourceParameterTree.getChildWithName(PropertyIds::Connections);
 		connectionTree.addChild(newC, -1, getUndoManager());
+		return;
+	}
+	else if (modNode != nullptr)
+	{
+		ValueTree newC(PropertyIds::Connection);
+		newC.setProperty(PropertyIds::NodeId, getId(), nullptr);
+		newC.setProperty(PropertyIds::ParameterId, PropertyIds::Bypassed.toString(), nullptr);
+
+		modNode->getModulationTargetTree().addChild(newC, -1, getUndoManager());
+		return;
 	}
 	else
 	{
@@ -1248,6 +1313,20 @@ void NodeBase::connectToBypass(var dragDetails)
 				auto slotIndex = src.fromFirstOccurrenceOf("[", false, false).getIntValue();
 
 				for (auto c : stree.getChild(slotIndex).getChildWithName(PropertyIds::Connections))
+				{
+					if (c[PropertyIds::NodeId] == getId() && c[PropertyIds::ParameterId].toString() == "Bypassed")
+					{
+						c.getParent().removeChild(c, getUndoManager());
+						return;
+					}
+				}
+			}
+		}
+		else
+		{
+			if (auto modNode = dynamic_cast<ModulationSourceNode*>(getRootNetwork()->getNodeWithId(src)))
+			{
+				for(auto c: modNode->getModulationTargetTree())
 				{
 					if (c[PropertyIds::NodeId] == getId() && c[PropertyIds::ParameterId].toString() == "Bypassed")
 					{
@@ -1338,11 +1417,31 @@ juce::Array<NodeBase::Parameter*> NodeBase::Parameter::getConnectedMacroParamete
 	return list;
 }
 
-HelpManager::HelpManager(NodeBase* parent, ValueTree d) :
-	ControlledObject(parent->getScriptProcessor()->getMainController_())
+HelpManager::HelpManager(NodeBase* parent_, ValueTree d) :
+	ControlledObject(parent_->getScriptProcessor()->getMainController_()),
+	parent(*parent_)
 {
 	commentListener.setCallback(d, { PropertyIds::Comment, PropertyIds::NodeColour}, valuetree::AsyncMode::Asynchronously,
 		BIND_MEMBER_FUNCTION_2(HelpManager::update));
+}
+
+HelpManager::~HelpManager()
+{
+	if(commentButton != nullptr && commentButton->getParentComponent() != nullptr)
+		commentButton->getParentComponent()->removeChildComponent(commentButton);
+
+	commentButton = nullptr;
+}
+
+void HelpManager::setCommentTooltip()
+{
+	auto firstLine = lastText.upToFirstOccurrenceOf("\n", false, false);
+
+	if(lastText.length() != firstLine.length())
+		firstLine << " [...] (click to show full content)";
+
+	if(commentButton != nullptr)
+		commentButton->setTooltip(firstLine);
 }
 
 void HelpManager::update(Identifier id, var newValue)
@@ -1370,6 +1469,8 @@ void HelpManager::update(Identifier id, var newValue)
 	{
 		lastText = newValue.toString();
 
+		setCommentTooltip();
+
 		auto f = GLOBAL_BOLD_FONT();
 
 		auto sa = StringArray::fromLines(lastText);
@@ -1387,17 +1488,32 @@ void HelpManager::render(Graphics& g, Rectangle<float> area)
 {
 	if (helpRenderer != nullptr && !area.isEmpty())
 	{
-		area.removeFromLeft(10.0f);
-		g.setColour(Colours::black.withAlpha(0.1f));
-		g.fillRoundedRectangle(area, 2.0f);
-		helpRenderer->draw(g, area.reduced(10.0f));
+		if(!showCommentButton())
+		{
+			if(!isHelpBelow())
+				area.removeFromLeft(UIValues::NodeMargin);
+			else
+				area.removeFromTop(UIValues::NodeMargin);
+
+			auto c = highlightColour == Colour(SIGNAL_COLOUR) ? Colours::black : highlightColour;
+			g.setColour(c.withAlpha(0.1f));
+			g.fillRoundedRectangle(area, 2.0f);
+			helpRenderer->draw(g, area.reduced(10.0f));
+		}
+		else
+		{
+			auto b = area.toNearestInt().reduced(3);
+
+			if(commentButton != nullptr && commentButton->getBoundsInParent() != b)
+				commentButton->setBounds(b);
+		}
 	}
 }
 
 void HelpManager::addHelpListener(Listener* l)
 {
 	listeners.addIfNotAlreadyThere(l);
-	l->helpChanged(lastWidth + 30.0f, lastHeight + 20.0f);
+	//l->helpChanged(lastWidth + 30.0f, lastHeight + 20.0f);
 }
 
 void HelpManager::removeHelpListener(Listener* l)
@@ -1405,13 +1521,76 @@ void HelpManager::removeHelpListener(Listener* l)
 	listeners.removeAllInstancesOf(l);
 }
 
+void HelpManager::initCommentButton(Component* parentComponent)
+{
+	if(commentButton != nullptr)
+	{
+		if(auto pc = commentButton->getParentComponent())
+		pc->removeChildComponent(commentButton);
+	}
+	
+	if(lastText.isNotEmpty())
+	{
+		auto showComments = (bool)dynamic_cast<NodeComponent*>(parentComponent)->node->getRootNetwork()->getValueTree()[PropertyIds::ShowComments];
+
+		if(commentButton == nullptr)
+		{
+			commentButton = new HiseShapeButton("comment", nullptr, *this);
+
+			setCommentTooltip();
+
+			commentButton->onClick = [this]()
+			{
+				setShowComments(true);
+				commentButton->findParentComponentOfClass<DspNetworkGraph>()->resizeNodes();
+			};
+		}
+			
+
+		parentComponent->addChildComponent(commentButton);
+
+		setShowComments(showComments);
+	}
+}
+
+void HelpManager::setShowComments(bool shouldShowComments)
+{
+	showButton = !shouldShowComments;
+
+	if(commentButton != nullptr)
+		commentButton->setVisible(showButton);
+}
+
 juce::Rectangle<float> HelpManager::getHelpSize() const
 {
-	return { 0.0f, 0.0f, lastHeight > 0.0f ? lastWidth + 30.0f : 0.0f, lastHeight + 20.0f };
+	if(showCommentButton())
+	{
+		if(lastHeight != 0.0f || lastWidth != 0.0f)
+			return { 0.0f, 0.0f, 30.0f, 30.0f };
+
+		return {};
+	}
+	else
+	{
+		return { 0.0f, 0.0f, lastHeight > 0.0f ? lastWidth + 30.0f : 0.0f, lastHeight > 0.0f ? lastHeight + 20.0f : 0.0f };
+	}
+}
+
+bool HelpManager::isHelpBelow() const
+{
+	if(auto pn = dynamic_cast<SerialNode*>(parent.getParentNode()))
+	{
+		return !pn->isVertical.getValue();
+	}
+
+	return false;
 }
 
 void HelpManager::rebuild()
 {
+	if(commentButton != nullptr)
+		commentButton->setVisible(showCommentButton());
+
 	if (lastText.isNotEmpty())
 	{
 		helpRenderer = new MarkdownRenderer(lastText);
@@ -1427,10 +1606,13 @@ void HelpManager::rebuild()
 		lastHeight = 0.0f;
 	}
 
-	for (auto l : listeners)
+	if(!showCommentButton())
 	{
-		if (l != nullptr)
-			l->helpChanged(lastWidth + 30.0f, lastHeight);
+		for (auto l : listeners)
+		{
+			if (l != nullptr)
+				l->helpChanged(lastWidth + 30.0f, lastHeight);
+		}
 	}
 }
 
@@ -1518,8 +1700,9 @@ scriptnode::parameter::dynamic_base::Ptr ConnectionBase::createParameterFromConn
 
 		n->getRootNetwork()->getExceptionHandler().removeError(tn, Error::UnscaledModRangeMismatch);
 
-
 		parameter::dynamic_base::Ptr p;
+
+		auto targetIsMacro = dynamic_cast<NodeContainer*>(tn) != nullptr;
 
 		if (pId == PropertyIds::Bypassed.toString())
 		{
@@ -1537,13 +1720,23 @@ scriptnode::parameter::dynamic_base::Ptr ConnectionBase::createParameterFromConn
 		{
 			p = param->getDynamicParameter();
 
+			if(auto dh = dynamic_cast<parameter::dynamic_base_holder*>(p.get()))
+			{
+				dh->setAllowForwardToParameter(false);
+				dh->updateRange(param->data);
+			}
+
 			isUnscaledTarget = cppgen::CustomNodeProperties::isUnscaledParameter(param->data);
 		}
 		else
 			return nullptr;
 
+		auto targetNodeType = tn->getPath().toString();
+		auto isCableValueParameter = targetNodeType.contains("local_cable") || targetNodeType.contains("global_cable");
 
-		if (numConnections == 1)
+		
+		
+		if (numConnections == 1 && !isCableValueParameter && !targetIsMacro)
 		{
 			auto sameRange = RangeHelpers::equalsWithError(p->getRange(), inputRange, 0.001);
 			
@@ -1667,26 +1860,7 @@ void ProcessDataPeakChecker::check(bool post)
 #endif
 }
 
-RealNodeProfiler::RealNodeProfiler(NodeBase* n, int numSamples_) :
-	enabled(n->getRootNetwork()->getCpuProfileFlag()),
-	profileFlag(n->getCpuFlag()),
-	numSamples(numSamples_),
-	node(n)
-{
-	if (enabled)
-		start = Time::getMillisecondCounterHiRes();
-}
 
-RealNodeProfiler::~RealNodeProfiler()
-{
-	if (enabled)
-	{
-		auto delta = Time::getMillisecondCounterHiRes() - start;
-		profileFlag = profileFlag * 0.9 + 0.1 * delta;
-
-		node->processProfileInfo(profileFlag, numSamples);
-	}
-}
 
 Parameter::ScopedAutomationPreserver::ScopedAutomationPreserver(NodeBase* n) :
 	parent(n)

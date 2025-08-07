@@ -37,16 +37,61 @@ using namespace juce;
 
 struct Animator: public Timer
 {
+	struct RenderTarget
+	{
+		RenderTarget():
+		  first(nullptr),
+		  second(-1),
+		  repaintArea({})
+		{};
+
+		RenderTarget(Component* c):
+		  first(c),
+		  second(-1),
+		  repaintArea({})
+		{}
+
+		RenderTarget(Component* c, int areaIndex, Rectangle<int> area):
+		  first(c),
+		  second(areaIndex),
+		  repaintArea(area)
+		{}
+
+		bool operator==(const RenderTarget& other) const
+		{
+			return first.getComponent() == other.first.getComponent() && second == other.second;
+		}
+
+		bool repaint()
+		{
+			if(first.getComponent() != nullptr)
+			{
+				if(repaintArea.isEmpty())
+					first->repaint();
+				else
+					first->repaint(repaintArea);
+
+				return true;
+			}
+
+			return false;
+		}
+
+		Component::SafePointer<Component> first;
+		int second = -1;
+		Rectangle<int> repaintArea;
+	};
+
 	struct ScopedComponentSetter
 	{
-		ScopedComponentSetter(Component* c);
+		ScopedComponentSetter(RenderTarget c);
 		~ScopedComponentSetter();
 
-		Component::SafePointer<Component> prev;
+		RenderTarget prev;
 		Animator* a = nullptr;
 	};
 
-	Component::SafePointer<Component> currentlyRenderedComponent;
+	RenderTarget currentlyRenderedComponent;
 
 	struct Item
 	{
@@ -55,17 +100,54 @@ struct Animator: public Timer
 
 		bool timerCallback(double deltaMs);
 
-		Component::SafePointer<Component> target;
+		void updateCurrentRange()
+		{
+			auto v = currentProgress;
+
+			if(!reverse)
+				v = 1.0 - v;
+
+			v = transitionData.f ? transitionData.f(v) : v;
+
+			if(!reverse)
+				v = 1.0 - v;
+
+			currentProgress = v;
+
+			if(reverse)
+			{
+				currentAnimationRange = { 0.0, v };
+			}
+			else
+			{
+				currentAnimationRange = { v, 1.0 };
+			}
+		}
+
+		void resetWaitCounter()
+		{
+			if(transitionData.delay != 0.0 && transitionData.duration != 0.0)
+			{
+				waitCounter = transitionData.delay / transitionData.duration;
+			}
+		}
+
+		RenderTarget target;
 
 		StyleSheet::Ptr css;
 		Transition transitionData;
 
 		PropertyKey startValue;
 		PropertyKey endValue;
-		
+
+		String intermediateStartValue;
 		double currentProgress = 0.0;
+		double speed = 1.0;
+		
+		Range<double> currentAnimationRange = { 0.0, 1.0 };
+		
 		bool reverse = false;
-		int waitCounter = 0;
+		double waitCounter = 0.0;
 
 		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Item);
 	};
@@ -78,14 +160,18 @@ struct Animator: public Timer
 	OwnedArray<Item> items;
 };
 
+struct CSSRootComponent;
+
 struct StateWatcher
 {
 	using TextData = std::tuple<String, Justification, Rectangle<float>>;
 
-	StateWatcher(Animator& animator_):
-	  animator(animator_)
+	StateWatcher(CSSRootComponent* parent_, Animator& animator_):
+	  animator(animator_),
+	  parent(parent_)
 	{};
 
+	CSSRootComponent* parent;
 	Animator& animator;
 
 	struct Item
@@ -95,7 +181,7 @@ struct StateWatcher
 		void renderShadow(Graphics& g, const TextData& textData, const std::vector<melatonin::ShadowParameters>& parameters, bool wantsInset);
 		void renderShadow(Graphics& g, const Path& p, const std::vector<melatonin::ShadowParameters>& parameters, bool wantsInset);
 
-		Component::SafePointer<Component> c;
+		Animator::RenderTarget c;
 		int currentState = 0;
 		
 		melatonin::DropShadow dropShadow;
@@ -104,12 +190,12 @@ struct StateWatcher
 		melatonin::InnerShadow innerShadowText;
 	};
 
-	template <typename RenderObject> void renderShadow(Graphics& g, const RenderObject& p, Component* c, const std::vector<melatonin::ShadowParameters>& parameters, bool wantsInset)
+	template <typename RenderObject> void renderShadow(Graphics& g, const RenderObject& p, Animator::RenderTarget c, const std::vector<melatonin::ShadowParameters>& parameters, bool wantsInset)
 	{
 		if(parameters.empty())
 			return;
 
-		if(c == nullptr)
+		if(c.first == nullptr)
 		{
 			noComponentItem.renderShadow(g, p, parameters, wantsInset);
 			return;
@@ -117,7 +203,7 @@ struct StateWatcher
 
 		for(auto& item: items)
 		{
-			if(item.c == c)
+			if(item.c.first == c.first && item.c.second == c.second)
 			{
 				item.renderShadow(g, p, parameters, wantsInset);
 				break;
@@ -125,21 +211,35 @@ struct StateWatcher
 		}
 	}
 
-	void checkChanges(Component* c, StyleSheet::Ptr ss, int currentState);
+	void checkChanges(Animator::RenderTarget c, StyleSheet::Ptr ss, int currentState);
 
-	std::pair<bool, int> changed(Component* c, int stateFlag);
+	std::pair<bool, int> changed(Animator::RenderTarget c, int stateFlag);
 
 	void registerComponentToUpdate(Component* c);
+
+	void resetComponent(Component* c)
+	{
+		for(auto& i: updatedComponents)
+		{
+			if(i.target.first == c)
+			{
+				i.resetInitialisation();
+				c->repaint();
+			}
+		}
+	}
 
 	Array<Item> items;
 	
 	struct UpdatedComponent
 	{
-		bool operator==(const UpdatedComponent& other) const { return target.getComponent() == other.target.getComponent(); }
+		bool operator==(const UpdatedComponent& other) const { return target.first.getComponent() == other.target.first.getComponent() && target.second == other.target.second; }
 
-		Component::SafePointer<Component> target;
+		Animator::RenderTarget target;
 
-		void update(StyleSheet::Ptr ss, int currentState);
+		void resetInitialisation() { initialised = false; }
+
+		void update(CSSRootComponent* cssRoot, StyleSheet::Ptr ss, int currentState);
 
 		bool initialised = false;
 	};

@@ -56,6 +56,9 @@ scriptnode::routing::GlobalRoutingManager::Ptr GlobalRoutingManager::Helpers::ge
 
 juce::Colour GlobalRoutingManager::Helpers::getColourFromId(const String& id)
 {
+	if(id.isEmpty())
+		return Colours::transparentBlack;
+
 	auto h = static_cast<uint32>(id.hashCode());
 	return Colour(h).withSaturation(0.6f).withAlpha(1.0f).withBrightness(0.7f);
 }
@@ -142,7 +145,7 @@ juce::Path GlobalRoutingManager::RoutingIcons::createPath(const String& url) con
 #if USE_BACKEND
 	LOAD_EPATH_IF_URL("new", SampleMapIcons::newSampleMap);
 	LOAD_EPATH_IF_URL("debug", BackendBinaryData::ToolbarIcons::viewPanel);
-	LOAD_PATH_IF_URL("goto", ColumnIcons::openWorkspaceIcon);
+	LOAD_EPATH_IF_URL("goto", ColumnIcons::openWorkspaceIcon);
 	LOAD_EPATH_IF_URL("global", HiBinaryData::SpecialSymbols::globalCableIcon);
 #endif
 
@@ -1110,7 +1113,8 @@ void GlobalRoutingNodeBase::prepare(PrepareSpecs specs)
 
 juce::Rectangle<int> GlobalRoutingNodeBase::getPositionInCanvas(Point<int> topLeft) const
 {
-	return Rectangle<int>(topLeft.getX(), topLeft.getY(), 256, UIValues::HeaderHeight + UIValues::ParameterHeight + UIValues::NodeMargin + Editor::EditorHeight);
+	auto x = Rectangle<int>(topLeft.getX(), topLeft.getY(), 256, UIValues::HeaderHeight + UIValues::ParameterHeight + UIValues::NodeMargin + Editor::EditorHeight);
+	return getBoundsToDisplay(x);
 }
 
 scriptnode::NodeComponent* GlobalRoutingNodeBase::createComponent()
@@ -1475,7 +1479,9 @@ void GlobalCableNode::processFrame(FrameType& data)
 
 juce::Rectangle<int> GlobalCableNode::getPositionInCanvas(Point<int> topLeft) const
 {
-	return Rectangle<int>(topLeft.getX(), topLeft.getY(), 256, UIValues::HeaderHeight + UIValues::ParameterHeight + UIValues::NodeMargin + EditorHeight);
+	auto x = Rectangle<int>(topLeft.getX(), topLeft.getY(), 256, UIValues::HeaderHeight + UIValues::ParameterHeight + UIValues::NodeMargin + EditorHeight);
+
+	return getBoundsToDisplay(x);
 }
 
 void GlobalCableNode::sendValue(double v)
@@ -1690,6 +1696,12 @@ scriptnode::routing::GlobalRoutingManager::SelectableTargetBase::List GlobalRout
 	return l;
 }
 
+void GlobalRoutingManager::Cable::sendDataStatic(source_base* sb, void* data, size_t numBytes)
+{
+	auto c = static_cast<Cable*>(sb);
+	c->sendData(nullptr, data, numBytes);
+}
+
 bool GlobalRoutingManager::Cable::containsTarget(CableTargetBase* n) const
 {
 	return targets.contains(n);
@@ -1706,6 +1718,17 @@ void GlobalRoutingManager::Cable::removeTarget(CableTargetBase* n)
 {
 	SimpleReadWriteLock::ScopedWriteLock sl(lock);
 	targets.removeAllInstancesOf(n);
+}
+
+void GlobalRoutingManager::Cable::sendData(CableTargetBase* source, void* data, size_t numBytes)
+{
+	for (auto t : targets)
+	{
+		if (t == source)
+			continue;
+
+		t->sendData(data, numBytes);
+	}
 }
 
 void GlobalRoutingManager::Cable::sendValue(CableTargetBase* source, double v)

@@ -84,10 +84,12 @@ class TableEditor : public Component,
 	public SettableTooltipClient,
 	public CopyPasteTarget,
 	public Table::Listener,
+	public ProfiledComponent,
 	public ComplexDataUIBase::EditorBase
 {
 public:
 
+	using ComplexDataType = hise::Table;
 	struct LookAndFeelMethods
 	{
         virtual ~LookAndFeelMethods();;
@@ -179,7 +181,29 @@ public:
 
 	void graphHasChanged(int point) override;
 
-	String getObjectTypeName() override;;
+	String getObjectTypeName() override;
+
+	struct MouseDragProperties
+	{
+		void fromVar(const var& obj)
+		{
+			syncStartEnd = obj.getProperty("syncStartEnd", syncStartEnd);
+			allowSwap = obj.getProperty("allowSwap", allowSwap);
+			fixLeftEdge = obj.getProperty("fixLeftEdge", fixLeftEdge);
+			fixRightEdge = obj.getProperty("fixRightEdge", fixRightEdge);
+			snapWidth = obj.getProperty("snapWidth", snapWidth);
+			numSteps = obj.getProperty("numSteps", numSteps);
+		}
+
+		float snapWidth = 10.0f;
+		bool syncStartEnd = false;
+		bool allowSwap = false;
+		float fixLeftEdge = -1.0f;
+		float fixRightEdge = -1.0f;
+		int numSteps = -1;
+	};
+
+	void setMouseDragProperties(const var& obj);;
 
     void setDrawTableValueLabel(bool shouldBeDisplayed);
 
@@ -272,7 +296,11 @@ public:
 
 	LookAndFeelMethods* getTableLookAndFeel();
 
+	paintAndProfileChildren(g);
+
 private:
+
+	MouseDragProperties dragProperties;
 
 	float margin = 0.0f;
     

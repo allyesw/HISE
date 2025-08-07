@@ -569,7 +569,11 @@ public:
 
 	}
 
-	
+	void connectToRuntimeTarget(bool add, const runtime_target::connection& c)
+    {
+        if constexpr (prototypes::check::connectToRuntimeTarget<T>::value)
+            obj.connectToRuntimeTarget(add, c);
+    }
 
 	template <int P> void setParameter(double v)
 	{
@@ -681,6 +685,8 @@ struct oversample_base
 
 	using Oversampler = juce::dsp::Oversampling<float>;
 
+	using FilterType = Oversampler::FilterType;
+
 	oversample_base(int factor) :
 		oversamplingFactor(jmax(1, factor))
 	{};
@@ -699,7 +705,7 @@ struct oversample_base
 
         ScopedPointer<Oversampler> newOverSampler;
         
-        newOverSampler = new Oversampler(numChannels, (int)std::log2(oversamplingFactor), Oversampler::FilterType::filterHalfBandPolyphaseIIR, false);
+        newOverSampler = new Oversampler(numChannels, (int)std::log2(oversamplingFactor), filterType, false);
 
         if (originalBlockSize > 0)
             newOverSampler->initProcessing(originalBlockSize);
@@ -747,6 +753,28 @@ struct oversample_base
 		if(originalSpecs)
 			prepare(originalSpecs);
     }
+
+	FilterType getFilterType() const { return filterType; }
+
+	void setFilterType(int nt)
+    {
+		span<FilterType, 2> types = {
+			FilterType::filterHalfBandPolyphaseIIR,
+			FilterType::filterHalfBandFIREquiripple
+		};
+
+		auto newType = types[jlimit(0, 1, nt)];
+
+	    if(newType != filterType)
+	    {
+			SimpleReadWriteLock::ScopedWriteLock sl(this->lock);
+
+		    filterType = newType;
+
+			if(originalSpecs)
+				prepare(originalSpecs);
+	    }
+    }
     
 protected:
 
@@ -757,7 +785,9 @@ protected:
     int oversamplingFactor = 0;
     int originalBlockSize = 0;
     int numChannels = 0;
-	
+
+	FilterType filterType = FilterType::filterHalfBandPolyphaseIIR;
+
 	void* pObj = nullptr;
 	prototypes::prepare prepareFunc;
 
@@ -940,10 +970,15 @@ public:
 
     template <int P> void setParameter(double newValue)
     {
-		static_assert(P == 0, "illegal parameter index");
+		static_assert(P == 0 || P == 1, "illegal parameter index");
+		static_assert(OversamplingFactor == 0 || P == 0, "wrong filter type index for static oversampling");
 
-        if constexpr(P == 0)
-            this->setOversamplingFactor((int)newValue);
+		if constexpr(P == 0 && OversamplingFactor == 0)
+			this->setOversamplingFactor((int)newValue);
+        else
+			this->setFilterType((int)newValue);
+            
+		
     }
 	SN_FORWARD_PARAMETER_TO_MEMBER(oversample);
 
@@ -1089,6 +1124,12 @@ template <class T, class DataHandler = default_data<T>> struct data : public wra
 	template <int P> void setParameter(double v)
 	{
 		T::template setParameterStatic<P>(&this->obj, v);
+	}
+
+	void connectToRuntimeTarget(bool addConnection, const runtime_target::connection& c)
+	{
+		if constexpr (prototypes::check::connectToRuntimeTarget<T>::value)
+			this->obj.connectToRuntimeTarget(addConnection, c);
 	}
 
 	JUCE_DECLARE_WEAK_REFERENCEABLE(data);
@@ -1543,7 +1584,13 @@ template <class ParameterClass, class T> struct mod
             obj.createParameters(data);
         
     }
-    
+
+	void connectToRuntimeTarget(bool add, const runtime_target::connection& c)
+    {
+        if constexpr (prototypes::check::connectToRuntimeTarget<T>::value)
+            obj.connectToRuntimeTarget(add, c);
+    }
+
 	void setExternalData(const ExternalData& d, int index)
 	{
 		if constexpr (prototypes::check::setExternalData<T>::value)
@@ -1600,6 +1647,9 @@ template <typename T> struct illegal_poly: public scriptnode::data::base,
 	void initialise(NodeBase* n) { obj.initialise(n); }
 
 	void createParameters(ParameterDataList& l) { obj.createParameters(l); }
+
+	SN_DEFAULT_CREATE_MOD_INFO(T);
+
 	T obj;
 };
 
@@ -1638,6 +1688,8 @@ template <class T> struct node : public scriptnode::data::base
 	static constexpr int NumDisplayBuffers = MetadataClass::NumDisplayBuffers;
 
 	static constexpr int getFixChannelAmount() { return NumChannels; };
+
+	static constexpr std::pair<int, int> getModulationProperties() { return T::getModulationProperties(); }
 
 	// We treat everything in this node as opaque...
 	SN_GET_SELF_AS_OBJECT(node);
@@ -1738,14 +1790,22 @@ template <class T> struct node : public scriptnode::data::base
             obj.connectToRuntimeTarget(add, c);
     }
 
+	void createExternalModulationInfo(OpaqueNode::ModulationProperties& info) const
+	{
+		if constexpr (prototypes::check::createExternalModulationInfo<T>::value)
+			obj.createExternalModulationInfo(info);
+		else
+		{
+			info.template fromNode<node>();
+		}
+	}
+
 	void createParameters(ParameterDataList& data)
 	{
 		ParameterDataList l;
 		obj.parameters.addToList(l);
 
 		auto peList = parameter::encoder::fromNode<node>();
-
-		
 
 		for (const parameter::pod& p : peList)
 		{

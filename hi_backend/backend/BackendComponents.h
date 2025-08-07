@@ -36,6 +36,7 @@
 namespace hise { using namespace juce;
 
 class BackendProcessorEditor;
+class BackendRootWindow;
 class ScriptContentContainer;
 
 
@@ -662,7 +663,260 @@ public:
 
 };
 
+namespace multipage
+{
 
+#define MULTIPAGE_BIND_CPP(className, methodName) state->bindCallback(#methodName, BIND_MEMBER_FUNCTION_1(className::methodName));
+
+struct EncodedDialogBase: public Component,
+						  public QuasiModalComponent,
+						  public multipage::HardcodedDialogWithStateBase,
+					      public ControlledObject
+{
+	EncodedDialogBase(BackendRootWindow* bpe_, bool addBorder=true);
+
+	struct Factory: public PathFactory
+	{
+		Path createPath(const String& url) const override
+		{
+			Path p;
+			LOAD_EPATH_IF_URL("close", HiBinaryData::ProcessorEditorHeaderIcons::closeIcon);
+
+			if(url == "minimize")
+			{
+				static const unsigned char pathData[] = { 110,109,47,128,38,68,0,0,64,67,98,2,156,55,68,0,0,64,67,0,128,69,68,248,143,119,67,0,128,69,68,216,255,157,67,98,0,128,69,68,176,55,192,67,2,156,55,68,254,255,219,67,47,128,38,68,254,255,219,67,98,254,99,21,68,254,255,219,67,0,128,7,68,176,55,192,67,
+				0,128,7,68,216,255,157,67,98,0,128,7,68,248,143,119,67,254,99,21,68,0,0,64,67,47,128,38,68,0,0,64,67,99,109,157,219,60,68,16,109,125,67,108,147,36,54,68,80,145,98,67,108,167,136,45,68,48,128,130,67,108,74,76,39,68,196,15,108,67,108,74,76,39,68,118,102,
+				156,67,108,14,124,58,68,118,102,156,67,108,177,63,52,68,42,238,143,67,108,157,219,60,68,16,109,125,67,99,109,67,219,22,68,4,183,202,67,108,47,119,31,68,98,127,185,67,108,5,179,37,68,176,247,197,67,108,5,179,37,68,28,153,159,67,108,241,131,18,68,28,153,
+				159,67,108,24,192,24,68,106,17,172,67,108,84,36,16,68,12,73,189,67,108,67,219,22,68,4,183,202,67,99,101,0,0 };
+				p.loadPathFromData (pathData, sizeof (pathData));
+			}
+
+			return p;
+		}
+	} factory;
+
+	void writeState(const Identifier& id, const var& value, NotificationType n=dontSendNotification)
+	{
+		state->globalState.getDynamicObject()->setProperty(id, value);
+
+		if(n != dontSendNotification)
+		{
+			if(auto pb = dialog->findPageBaseForID(id.toString()))
+				pb->postInit();
+		}
+	}
+
+	bool keyPressed(const KeyPress& key) override
+	{
+		if(key == KeyPress::escapeKey && closeOnEscape)
+		{
+			destroy();
+			return true;
+		}
+
+		return false;
+	}
+
+	var readState(const Identifier& id) const
+	{
+		return state->globalState[id];
+	}
+
+	virtual void bindCallbacks() = 0;
+
+	void loadFrom(const String& d)
+	{
+		MemoryBlock mb;
+		mb.fromBase64Encoding(d);
+		MemoryInputStream mis(mb, false);
+		MonolithData md(&mis);
+
+		state = new State(var());
+        
+        try
+        {
+            addAndMakeVisible(dialog = md.create(*state, true));
+        }
+        catch(String& e)
+        {
+            PresetHandler::showMessageWindow ("Error loading dialog", e, PresetHandler::IconType::Error);
+            
+            
+        }
+
+		
+
+        if(dialog != nullptr)
+        {
+            dialog->setFinishCallback([this]()
+            {
+                findParentComponentOfClass<ModalBaseWindow>()->clearModalComponent();
+            });
+
+            bindCallbacks();
+
+            setSize(dialog->getWidth()+2*(int)addBorder, dialog->getHeight()+2*(int)addBorder);
+
+            dialog->showFirstPage();
+
+			Component::callRecursive<simple_css::FlexboxComponent>(this, [this](simple_css::FlexboxComponent* c)
+			{
+				auto id = simple_css::FlexboxComponent::Helpers::getIdSelectorFromComponentClass(c).name;
+
+				if(id == "header" && c->isVisible())
+				{
+					c->setInterceptsMouseClicks(true, true);
+					this->dragger = new WindowDragger(rootWindow, this, c);
+					return true;
+				}
+
+				return false;
+			});
+        }
+	}
+
+	void closeAndPerform(const std::function<void()>& f)
+	{
+		dialog->setFinishCallback(f);
+
+		MessageManager::callAsync([this]()
+		{
+			dialog->navigate(true);
+		});
+	}
+
+	void setElementProperty(const String& listId, const Identifier& id, const var& newValue)
+	{
+		if(auto pb = dialog->findPageBaseForID(listId))
+		{
+			pb->getInfoObject().getDynamicObject()->setProperty(id, newValue);
+			pb->updateInfoProperty(id);
+		}
+	}
+
+	void paint(Graphics& g) override
+	{
+		
+
+		g.fillAll(Colour(0xFF333333));
+
+		if(addBorder)
+		{
+			g.setColour(JUCE_LIVE_CONSTANT_OFF(Colour(0xFF474747)));
+			g.drawRect(getLocalBounds(), 1);
+		}
+		
+	}
+
+	const bool addBorder = true;
+
+	void resized() override
+	{
+		auto b = getLocalBounds().reduced((int)addBorder);
+
+        if(dialog != nullptr)
+            dialog->setBounds(b);
+
+		closeButton.setBounds(b.removeFromRight(34).removeFromTop(34).reduced(8));
+		closeButton.toFront(false);
+
+		if(minimizeButton.isVisible())
+		{
+			minimizeButton.toFront(false);
+			minimizeButton.setBounds(b.removeFromLeft(34).removeFromTop(34).reduced(8));
+		}
+	}
+
+	void navigate(int pageIndex, bool shouldSubmit)
+	{
+		SafeAsyncCall::call<EncodedDialogBase>(*this, [pageIndex, shouldSubmit](EncodedDialogBase& db)
+		{
+			if(shouldSubmit)
+			{
+				db.state->currentPageIndex = pageIndex-1;
+				db.dialog->navigate(true);
+			}
+			else
+			{
+				db.state->currentPageIndex = pageIndex;
+				db.dialog->refreshCurrentPage();
+			}
+		});
+	}
+
+	void setMinimizable(bool isMinimizable)
+	{
+		minimizeButton.setVisible(isMinimizable);
+		resized();
+	}
+
+protected:
+
+	ScopedPointer<State> state;
+	ScopedPointer<Dialog> dialog;
+
+	HiseShapeButton closeButton;
+	HiseShapeButton minimizeButton;
+
+	bool closeOnEscape = true;
+
+private:
+
+	
+
+	struct WindowDragger: public MouseListener,
+					      public ComponentBoundsConstrainer
+	{
+		WindowDragger(Component* rw, Component* dialog_, Component* draggedComponent_):
+		  rootWindow(rw),
+		  dialog(dialog_),
+		  draggedComponent(draggedComponent_)
+		{
+			draggedComponent->addMouseListener(this, true);
+		};
+
+		~WindowDragger()
+		{
+			if(draggedComponent.getComponent() != nullptr)
+				draggedComponent->removeMouseListener(this);
+		}
+
+		void mouseDown(const MouseEvent& e) override
+		{
+			dragger.startDraggingComponent(dialog, e);
+		}
+
+		void mouseDrag(const MouseEvent& e) override
+		{
+			dragger.dragComponent(dialog, e, this);
+		}
+
+		void checkBounds (Rectangle<int>& bounds,
+                              const Rectangle<int>& previousBounds,
+                              const Rectangle<int>& limits,
+                              bool isStretchingTop,
+                              bool isStretchingLeft,
+                              bool isStretchingBottom,
+                              bool isStretchingRight) override
+		{
+			bounds = bounds.constrainedWithin(rootWindow->getLocalBounds());
+		}
+
+		Component::SafePointer<Component> draggedComponent;
+		Component::SafePointer<Component> dialog;
+		Component::SafePointer<Component> rootWindow;
+		
+		ComponentDragger dragger;
+	};
+
+	ScopedPointer<WindowDragger> dragger;
+
+	Component* rootWindow;
+
+	JUCE_DECLARE_WEAK_REFERENCEABLE(EncodedDialogBase);
+};
+
+} // namespace multipage
 } // namespace hise
 
 #endif  // BACKENDCOMPONENTS_H_INCLUDED

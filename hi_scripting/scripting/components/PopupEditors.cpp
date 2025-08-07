@@ -116,7 +116,7 @@ PopupIncludeEditor::PopupIncludeEditor(JavascriptProcessor *s, const File &fileT
 	
 
 	Processor *p = dynamic_cast<Processor*>(jp.get());
-	externalFile = p->getMainController()->getExternalScriptFile(fileToEdit, t == FileTypes::Javascript);
+	externalFile = p->getMainController()->getExternalScriptFile(fileToEdit, t == FileTypes::Javascript || t == FileTypes::CSS);
 
     p->getMainController()->addScriptListener(this);
     
@@ -126,11 +126,22 @@ PopupIncludeEditor::PopupIncludeEditor(JavascriptProcessor *s, const File &fileT
 
 	addEditor(externalFile->getFileDocument(), isJavascript);
 
-	if (externalFile != nullptr && !isJavascript)
-		externalFile->getRuntimeErrorBroadcaster().addListener(*this, runTimeErrorsOccured);
+	
+
+	
 
 	addButtonAndCompileLabel();
 	refreshAfterCompilation(JavascriptProcessor::SnippetResult(s->getLastErrorMessage(), 0));
+
+	if (externalFile != nullptr && !isJavascript)
+		externalFile->getRuntimeErrorBroadcaster().addListener(*this, runTimeErrorsOccured);
+	if(isJavascript)
+	{
+		jp->runtimeErrorBroadcaster.addListener(*this, [](PopupIncludeEditor& e, const String& errorMessage)
+		{
+			e.setError(errorMessage.isEmpty() ? Result::ok() : Result::fail(errorMessage));
+		});
+	}
 
 	for (int i = 0; i < jp->getNumWatchedFiles(); i++)
 	{
@@ -160,6 +171,34 @@ PopupIncludeEditor::PopupIncludeEditor(JavascriptProcessor* s, const Identifier 
 	addEditor(d, true);
 	addButtonAndCompileLabel();
 
+	jp->runtimeErrorBroadcaster.addListener(*this, [](PopupIncludeEditor& e, const String& errorMessage)
+	{
+		if(errorMessage.isNotEmpty())
+		{
+			auto m = errorMessage.upToFirstOccurrenceOf("{{", false, false);
+			auto encodedState = errorMessage.fromFirstOccurrenceOf("{{", false, false).upToFirstOccurrenceOf("}}", false, false);
+			auto pId = HiseJavascriptEngine::RootObject::CodeLocation::Helpers::getProcessorId(encodedState);
+
+			DebugableObject::Location loc;
+			loc.charNumber = HiseJavascriptEngine::RootObject::CodeLocation::Helpers::getCharNumberFromBase64String(encodedState);
+			loc.fileName = HiseJavascriptEngine::RootObject::CodeLocation::Helpers::getFileName(encodedState);
+			if(loc.fileName.isEmpty())
+				loc.fileName = "onInit";
+
+			if(e.callback.toString() == loc.fileName)
+			{
+				CodeDocument::Position pos(e.doc->getCodeDocument(), loc.charNumber);
+
+				auto line = pos.getLineNumber() + 1;
+				auto col = pos.getIndexInLine();
+
+				String mclError = "Line ";
+				mclError << line << "(" << col << "): " << m;
+				e.editor->editor.setError(mclError);
+			}
+		}
+	});
+
     dynamic_cast<Processor*>(jp.get())->getMainController()->addScriptListener(this);
     
 	refreshAfterCompilation(JavascriptProcessor::SnippetResult(s->getLastErrorMessage(), 0));
@@ -171,9 +210,14 @@ struct JavascriptLanguageManager : public mcl::LanguageManager
 		jp(jp_),
         callback(callback_)
 	{
+		jp->heatmapManager.heatmapBroadcaster.addListener(ed, [](mcl::TextEditor& ed, DebugInformationBase::Ptr info, const std::map<int, double>* heatmap)
+		{
+			ed.setHeatMap(info, heatmap);
+		});
+
         jp->inplaceBroadcaster.addListener(ed, [](mcl::TextEditor& ed, Identifier, int)
         {
-            ed.repaint();
+			ed.rebuildInplaceDebugValues();
         });
     };
 
@@ -186,15 +230,15 @@ struct JavascriptLanguageManager : public mcl::LanguageManager
 
     Identifier getLanguageId() const override { return mcl::LanguageIds::HiseScript; }
     
-    bool getInplaceDebugValues(Array<InplaceDebugValue>& values) const override
+    bool getInplaceDebugValues(InplaceDebugValue::List& values) const override
     {
-		auto sn = jp->getSnippet(callback);
+		auto sn = jp->getSnippetOrExternalFile(callback);
 		
 		for(auto& ip: jp->inplaceValues)
 		{
-			ip.init();
+			ip->init();
 
-			if(ip.location.getOwner() == sn)
+			if(ip->location.getOwner() == sn)
 			{
 				values.add(ip);
 			}
@@ -208,10 +252,121 @@ struct JavascriptLanguageManager : public mcl::LanguageManager
 		
 	}
 
+	String getDefaultScriptCodeSnippets(bool getDefault)
+	{
+		Array<var> list;
+
+		static const Identifier name_("name");
+		static const Identifier language_("language");
+		static const Identifier code_("code");
+		static const Identifier description_("description");
+		static const Identifier priority_("priority");
+
+#define ADD_HS_SNIPPET(name, code, description); { DynamicObject::Ptr p = new DynamicObject(); p->setProperty(name_, name); \
+	                                                                p->setProperty(language_, "HiseScript"); p->setProperty(code_, code); \
+																	p->setProperty(description_, description); p->setProperty(priority_, 100); \
+														            list.add(var(p.get())); }
+			
+
+		if(!getDefault)
+		{
+			DynamicObject::Ptr p = new DynamicObject();
+
+			ADD_HS_SNIPPET("userSnippet", "This is a $SNIPPET$ from the user snippet list", 
+				        "This is a description that will show up in the autocomplete textbox");
+		}
+		else
+		{
+	
+
+			ADD_HS_SNIPPET("reg (...)", "reg $VAR_NAME$ = $VALUE$;", "A shortcut to a reg variable definition.");
+			ADD_HS_SNIPPET("const (...)", "const var $VAR_NAME$ = $VALUE$;", "A shortcut to a const variable definition.");
+			ADD_HS_SNIPPET("local (...)", "local $VAR_NAME$ = $VALUE$;", "A shortcut to a local variable definition.");
+			ADD_HS_SNIPPET("var (...)", "var $VAR_NAME$ = $VALUE$;", "A shortcut to a standard variable definition.");
+			ADD_HS_SNIPPET("for (...)", "for($LOOP_VAR$ = 0; $LOOP_VAR$ < 10; $LOOP_VAR$++)\n{\n\t$// loop body$\n}",
+				           "A simple for loop");
+			ADD_HS_SNIPPET("tr (...)", "Console.print(trace($data$));", "A shortcut for printing something to the console using `trace`");
+			ADD_HS_SNIPPET("smp (...)", "Console.sample($ID$, $VALUE$);", "A shortcut for the debug session sampling command");
+			ADD_HS_SNIPPET("pr (...)", "..if(PROFILE):profile(\"$TEXT$\");", "A shortcut for adding scoped profiling code");
+
+			ADD_HS_SNIPPET("inline1 (...)", "inline function $functionName$($args1$)\n{\n\t$// body$\n};",
+				           "A shortcut for a inline function definition with a single argument");
+
+			ADD_HS_SNIPPET("inline2 (...)", "inline function $functionName$($args1$, $args2$)\n{\n\t$// body$\n};",
+				           "A shortcut for a inline function definition with two arguments");
+
+			ADD_HS_SNIPPET("inline3 (...)", "inline function $functionName$($args1$, $args2$, $args3$)\n{\n\t$// body$\n};",
+				           "A shortcut for a inline function definition with 3 argument");
+
+			ADD_HS_SNIPPET("inline4 (...)", "inline function $functionName$($args1$, $args2$, $args3$, $args4$)\n{\n\t$// body$\n};",
+				           "A shortcut for a inline function definition with 4 arguments");
+
+			ADD_HS_SNIPPET("inline5 (...)", "inline function $functionName$($args1$, $args2$, $args3$, $args4$, $args5$)\n{\n\t$// body$\n};",
+				           "A shortcut for a inline function definition with a 5 arguments");
+
+			ADD_HS_SNIPPET("JSON1 (...)", "{\n  \"$key1$\": $v1$ }", 
+				           "A shortcut for a JSON object definition with a single property");
+
+			ADD_HS_SNIPPET("JSON2 (...)", "{\n  \"$key1$\": $v1$,\n  \"$key2$\": $v2$\n}", 
+				           "A shortcut for a JSON object definition with two properties");
+
+			ADD_HS_SNIPPET("JSON3 (...)", "{\n  \"$key1$\": $v1$,\n  \"$key2$\": $v2$,\n  \"$key3$\": $v3$\n}", 
+				           "A shortcut for a JSON object definition with a 3 properties");
+
+			ADD_HS_SNIPPET("JSON4 (...)", "{\n  \"$key1$\": $v1$,\n  \"$key2$\": $v2$,\n  \"$key3$\": $v4$,\n  \"$key4$\": $v3$\n}", 
+				           "A shortcut for a JSON object definition with a 4 properties");
+
+			ADD_HS_SNIPPET("broadcaster1 (...)", "const var $BROADCASTER_ID$ = Engine.createBroadcaster({\n  id: \"$BROADCASTER_ID$\",\n  args: [\"$a1$\"]\n});", 
+				           "A broadcaster definition with a single argument");
+		    ADD_HS_SNIPPET("broadcaster2 (...)", "const var $BROADCASTER_ID$ = Engine.createBroadcaster({\n  id: \"$BROADCASTER_ID$\",\n  args: [\"$a1$\", \"$a2$\"]\n});", 
+				           "A broadcaster definition with a two arguments");
+			ADD_HS_SNIPPET("broadcaster3 (...)", "const var $BROADCASTER_ID$ = Engine.createBroadcaster({\n  id: \"$BROADCASTER_ID$\",\n  args: [\"$a1$\", \"$a2$\", \"$a3$\"]\n});", 
+				           "A broadcaster definition with a two arguments");
+
+			ADD_HS_SNIPPET("onControl (...)", "inline function on$UI_CONTROL$Control(component, value)\n{\n\t$Console.print(value);$\n};\nContent.getComponent(\"$UI_CONTROL$\").setControlCallback(on$UI_CONTROL$Control);",
+						   "A code template for a control callback.  \n>Use Ctrl+D for selecting all `UI_CONTROL` tokens and rename it to the control ID");
+
+		    ADD_HS_SNIPPET("timer (...)", "const var $TIMER_VAR$ = Engine.createTimerObject();\n\n$TIMER_VAR$.setTimerCallback(function()\n{\n\t$// timer callback$\n});\n\n$TIMER_VAR$.startTimer($30$);\n",
+                           "A code snippet that will create a UI timer definition with a callback and a default period of 30Hz");
+
+		    ADD_HS_SNIPPET("css_inline (...)", "const var $UI_CONTROL$_laf = Content.createLocalLookAndFeel();\n$UI_CONTROL$_laf.setInlineStyleSheet(\"#$UI_CONTROL$ {\n  background-color: blue;\n  color: white;\n}\n\n#$UI_CONTROL$:hover {\n  background-color: red;\n}\");\n\nContent.getComponent(\"$UI_CONTROL$\").setLocalLookAndFeel($UI_CONTROL$_laf);\n",
+				           "A code snippet that will create a LAF class with an inline CSS style sheet that can be applied to a UI control using its id selector.  \n>Use `Ctrl+D` for selecting all `UI_CONTROL` tokens and rename it to the control ID");
+	
+#undef  ADD_HS_SNIPPET
+		}
+
+		return JSON::toString(var(list), false);
+	}
+
 	/** Add all token providers you want to use for this language. */
 	void addTokenProviders(mcl::TokenCollection* t)
 	{
 		t->addTokenProvider(new HiseJavascriptEngine::TokenProvider(jp));
+
+		if(auto p = jp.get())
+		{
+			auto mc = dynamic_cast<Processor*>(p)->getMainController();
+
+			Array<File> fileList;
+			
+			auto appDataFolder = ProjectHandler::getAppDataDirectory(mc);
+
+			fileList.add(appDataFolder.getChildFile("hiseCodeSnippets.json"));
+
+			fileList[0].replaceWithText(getDefaultScriptCodeSnippets(true));
+			
+			fileList.add(appDataFolder.getChildFile("userCodeSnippets.json"));
+
+			if(!fileList[1].existsAsFile())
+			{
+				fileList[1].replaceWithText(getDefaultScriptCodeSnippets(false));
+			}
+
+			t->addTokenProvider(new mcl::CodeSnippetProvider(fileList, "HiseScript", [mc](const String& m)
+			{
+				mc->getConsoleHandler().writeToConsole(m, 2, mc->getMainSynthChain(), Colours::red);
+			}));
+		}
 	}
 
 	/** Use this for additional setup. */
@@ -266,53 +421,7 @@ void PopupIncludeEditor::addButtonAndCompileLabel()
 void PopupIncludeEditor::refreshAfterCompilation(const JavascriptProcessor::SnippetResult& r)
 {
     checkUnreferencedExternalFile();
-    
-	bottomBar->setError(r.r.getErrorMessage());
-
-	if (auto asmcl = dynamic_cast<mcl::FullEditor*>(editor.get()))
-	{
-		if (!r.r.wasOk())
-		{
-			auto errorMessage = r.r.getErrorMessage();
-
-			auto secondLine = errorMessage.fromFirstOccurrenceOf("\n", false, false).substring(1).trim();
-
-			auto fileName = getFile().getFileName();
-
-			bool isSameFile = true;
-
-			if (!secondLine.startsWith(callback.toString()))
-				isSameFile = false;
-
-			if(fileName.isNotEmpty() && secondLine.contains(fileName))
-				isSameFile = true;
-
-			if (fileName.isEmpty() && secondLine.contains(".js"))
-				isSameFile = false;
-
-			if (secondLine.isEmpty())
-				isSameFile = true;
-
-			if (!isSameFile)
-			{
-				asmcl->editor.clearWarningsAndErrors();
-				return;
-			}
-
-			auto message = errorMessage.upToFirstOccurrenceOf("{", false, false);
-			auto line = errorMessage.fromFirstOccurrenceOf("Line ", false, false).getIntValue();
-			auto col = errorMessage.fromFirstOccurrenceOf("column ", false, false).getIntValue();
-
-			String mclError = "Line ";
-			mclError << line << "(" << col << "): " << message;
-
-			asmcl->editor.setError(mclError);
-		}
-		else
-		{
-			asmcl->editor.clearWarningsAndErrors();
-		}
-	}
+	setError(r.r);
 }
 
 PopupIncludeEditor::~PopupIncludeEditor()
@@ -498,17 +607,8 @@ File PopupIncludeEditor::getFile() const
 
 void PopupIncludeEditor::compileInternal()
 {
-	if (externalFile != nullptr)
-	{
-		if(externalFile->getResourceType() == ExternalScriptFile::ResourceType::EmbeddedInSnippet)
-		{
-			debugToConsole(dynamic_cast<Processor*>(getScriptProcessor()), "Skip writing embedded file " + externalFile->getFile().getFileName() + " to disk...");
-		}
-		else
-		{
-            externalFile->saveFile();
-		}
-	}
+	auto mc = dynamic_cast<Processor*>(getScriptProcessor())->getMainController();
+	mc->saveAllExternalFiles();
 
 	if(t == FileTypes::CSS)
 	{
@@ -532,19 +632,30 @@ void PopupIncludeEditor::compileInternal()
 		else
 		{
 			auto top = getTopLevelComponent();
-
 			auto css = p.getCSSValues();
-			auto fileName = getFile().getFileName();
+			auto scriptFolder = dynamic_cast<Processor*>(getScriptProcessor())->getMainController()->getActiveFileHandler()->getSubDirectory(FileHandlerBase::Scripts);
+			auto fileName = getFile().getRelativePathFrom(scriptFolder).replaceCharacter('\\', '/');
 
 			Component::callRecursive<ScriptContentComponent>(top, [&](ScriptContentComponent* c)
 			{
 				c->css.updateIsolatedCollection(fileName, css);
+				c->css.clearCache();
 
 				using BD = ScriptingApi::Content::ScriptMultipageDialog::Backdrop;
 
-				Component::callRecursive<BD>(c, [&](BD* mp)
+				Component::callRecursive<Component>(c, [&](Component* child)
 				{
-					mp->create(getEditor()->editor.getDocument().getAllContent());
+					if(auto bd = dynamic_cast<BD*>(c))
+					{
+						bd->create(getEditor()->editor.getDocument().getAllContent());
+					}
+					else if(auto fb = dynamic_cast<simple_css::FlexboxComponent*>(child))
+					{
+						fb->setCSS(c->css);
+					}
+
+					child->resized();
+					child->repaint();
 					return false;
 				});
 
@@ -626,7 +737,14 @@ void PopupIncludeEditor::addEditor(CodeDocument& d, bool isJavascript)
 	auto& ed = getEditor()->editor;
 
 	if (isJavascript)
-		ed.setLanguageManager(new JavascriptLanguageManager(jp, callback, ed));
+	{
+		auto callbackToUse = callback;
+
+		if(callbackToUse.isNull() && externalFile != nullptr)
+			callbackToUse = Identifier(externalFile->getFile().getFileName());
+
+		ed.setLanguageManager(new JavascriptLanguageManager(jp, callbackToUse, ed));
+	}
 	else
 	{
 		if(t == FileTypes::GLSL)

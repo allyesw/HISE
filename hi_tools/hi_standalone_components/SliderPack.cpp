@@ -932,7 +932,7 @@ void SliderPack::paintOverChildren(Graphics &g)
 					h = sliders[i]->getHeight() - v;
 				}
 
-				if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>())
+				if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>(this))
 					l->drawSliderPackFlashOverlay(g, *this, i, { x, y, w, h }, displayAlphas[i]);
 			}
 		}
@@ -940,7 +940,7 @@ void SliderPack::paintOverChildren(Graphics &g)
 
 	if (rightClickLine.getLength() != 0)
 	{
-		if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>())
+		if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>(this))
 			l->drawSliderPackRightClickLine(g, *this, rightClickLine);
 	}
 
@@ -950,7 +950,7 @@ void SliderPack::paintOverChildren(Graphics &g)
 		const int unit = -roundToInt(logFromStepSize);
 		String textToDraw = " #" + String(currentlyDraggedSlider) + ": " + String(currentlyDraggedSliderValue, unit) + suffix + " ";
 
-		if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>())
+		if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>(this))
 			l->drawSliderPackTextPopup(g, *this, textToDraw);
 	}
 }
@@ -1068,7 +1068,7 @@ void SliderPack::mouseDoubleClick(const MouseEvent &e)
 
 void SliderPack::paint(Graphics &g)
 {
-	if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>())
+	if (auto l = getSpecialLookAndFeel<LookAndFeelMethods>(this))
 	{
 		l->drawSliderPackBackground(g, *this);
 	}
@@ -1134,7 +1134,12 @@ void SliderPack::rebuildSliders()
 		{
 			sliders.removeLast();
 		}
-			
+
+#if !HISE_NO_GUI_TOOLS
+		auto addClassSelector = dynamic_cast<simple_css::StyleSheetLookAndFeel*>(&getLookAndFeel()) != nullptr;
+		Array<simple_css::Selector> selectors = { simple_css::Selector(simple_css::SelectorType::Class, ".packslider") };
+#endif
+
 		for (int i = 0; i < numToAdd; i++)
 		{
 			Slider *s = new Slider();
@@ -1142,6 +1147,14 @@ void SliderPack::rebuildSliders()
 			sliders.add(s);
 			s->setComponentID(String(i));
 			//s->setLookAndFeel(getSpecialLookAndFeel<LookAndFeel>());
+
+#if !HISE_NO_GUI_TOOLS
+			if(addClassSelector)
+			{
+				simple_css::FlexboxComponent::Helpers::writeClassSelectors(*s, selectors, true);
+			}
+#endif
+
 			s->setInterceptsMouseClicks(false, false);
 			s->addListener(this);
 			s->setSliderStyle(Slider::SliderStyle::LinearBarVertical);
@@ -1377,6 +1390,37 @@ void SliderPack::removeListener(Listener* listener)
 void SliderPack::setCallbackOnMouseUp(bool shouldFireOnMouseUp)
 {
 	callbackOnMouseUp = shouldFireOnMouseUp;
+}
+
+void SliderPack::setStepSequencerMode(bool shouldUseStepSequencerMode)
+{
+	toggleMaxMode = shouldUseStepSequencerMode;
+}
+
+int SliderPack::getHoverStateForSlider(Slider* s) const
+{
+	auto idx = sliders.indexOf(s);
+
+	ignoreUnused(idx);
+	int state = 0;
+
+#if !HISE_NO_GUI_TOOLS
+	if(currentlyDragged)
+	{
+		if(idx == currentlyDraggedSlider)
+		{
+			state |= (int)simple_css::PseudoClassType::Hover;
+			state |= (int)simple_css::PseudoClassType::Active;
+		}
+	}
+	else
+	{
+		if(idx == currentlyHoveredSlider)
+			state |= (int)simple_css::PseudoClassType::Hover;
+	}
+#endif
+	
+	return state;
 }
 
 void SliderPack::LookAndFeelMethods::drawSliderPackBackground(Graphics& g, SliderPack& s)

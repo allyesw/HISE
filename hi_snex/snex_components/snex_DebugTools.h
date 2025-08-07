@@ -358,7 +358,7 @@ struct SnexLanguageManager : public mcl::LanguageManager,
 		s.addDebugHandler(this);
 	};
 
-	Array<LanguageManager::InplaceDebugValue> debugValues;
+	LanguageManager::InplaceDebugValue::List debugValues;
 
 	void recompiled() override
 	{
@@ -377,25 +377,25 @@ struct SnexLanguageManager : public mcl::LanguageManager,
 			if (value.length() > 60)
 				value = value.substring(0, 60) + "(...)";
 
-			for (auto& v : debugValues)
+			for (auto v : debugValues)
 			{
-				if (v.location.getLineNumber() == lineNumber)
+				if (v->location.getLineNumber() == lineNumber)
 				{
-					v.value = value;
+					v->value = value;
 					return;
 				}
 			}
 
-			InplaceDebugValue newValue;
-			newValue.value = value;
+			auto newValue = new InplaceDebugValue();
+			newValue->value = value;
 
-			newValue.location = CodeDocument::Position(doc, lineNumber, 99);
-			debugValues.add(std::move(newValue));
-			(debugValues.getRawDataPointer() + debugValues.size() - 1)->location.setPositionMaintained(true);
+			newValue->location = CodeDocument::Position(doc, lineNumber, 99);
+			newValue->location.setPositionMaintained(true);
+			debugValues.add(newValue);
 		}
 	}
 
-	bool getInplaceDebugValues(Array<InplaceDebugValue>& values) const override
+	bool getInplaceDebugValues(InplaceDebugValue::List& values) const override
 	{
 		values.addArray(debugValues);
 		return !debugValues.isEmpty();
@@ -413,14 +413,7 @@ struct SnexLanguageManager : public mcl::LanguageManager,
 
 	mcl::FoldableLineRange::List createLineRange(const CodeDocument& doc) override;
 
-	void addTokenProviders(mcl::TokenCollection* t) override
-	{
-		t->addTokenProvider(new debug::KeywordProvider());
-		t->addTokenProvider(new debug::SymbolProvider(doc));
-		t->addTokenProvider(new debug::TemplateProvider());
-		t->addTokenProvider(new debug::MathFunctionProvider());
-		t->addTokenProvider(new debug::PreprocessorMacroProvider(doc));
-	}
+	void addTokenProviders(mcl::TokenCollection* t) override;
 
 	void setupEditor(mcl::TextEditor* e) override
 	{

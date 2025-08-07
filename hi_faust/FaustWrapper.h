@@ -9,6 +9,22 @@ using namespace std::chrono_literals;
 namespace scriptnode {
 namespace faust {
 
+struct FaustVersionChecker
+{
+	static void checkFaustVersion()
+	{
+		static constexpr int faustVersion = FAUSTMAJORVERSION * 1000000 + FAUSTMINORVERSION * 1000 + FAUSTPATCHVERSION;
+
+		// 2.74.6 is required from now on...
+		static constexpr int minFaustVersion = 2 * 1000000 + 74 * 1000 + 6;
+
+		if(faustVersion < minFaustVersion)
+		{
+			scriptnode::Error::throwError(Error::OldFaustVersion, minFaustVersion, faustVersion);
+		}
+	}
+};
+
 /** wrapper struct for faust types to avoid name-clash.
 
 	This is the base class for every faust node - statically compiled C++ faust nodes
@@ -51,7 +67,7 @@ template <int NV, class ParameterClass> struct faust_base_wrapper
 	}
 
 	// std::string code;
-	int sampleRate;
+	int sampleRate = 0;
 
 	// This contains a faust instance for each voice
 	PolyData<::faust::dsp*, NumVoices> faustDsp;
@@ -95,11 +111,14 @@ template <int NV, class ParameterClass> struct faust_base_wrapper
             return;
         
 		if (_nChannels != specs.numChannels || _nFramesMax != specs.blockSize) {
-			DBG("Faust: Resizing buffers: nChannels=" << _nChannels << ", blockSize=" << _nFramesMax);
+			
 			_nChannels = specs.numChannels;
 			_nFramesMax = specs.blockSize;
+			DBG("Faust: Resizing buffers: nChannels=" << _nChannels << ", blockSize=" << _nFramesMax);
 			resizeBuffer();
 		}
+
+		FaustVersionChecker::checkFaustVersion();
 
 		// recompile if sample rate changed
 		int newSampleRate = (int)specs.sampleRate;
@@ -126,6 +145,9 @@ template <int NV, class ParameterClass> struct faust_base_wrapper
 				// the error system expects a single integer as "expected value", so we need
 				// to encode both input and output channels into a single integer using a magic trick
 				auto encodedChannelCount = 1000 * numInputs + numOutputs;
+
+				// Reset the sample rate so that it will be initialised the next prepare() call
+				sampleRate = 0;
 
 				scriptnode::Error::throwError(Error::IllegalFaustChannelCount, numHiseChannels, encodedChannelCount);
 			}

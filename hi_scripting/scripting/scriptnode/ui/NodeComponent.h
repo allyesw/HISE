@@ -39,7 +39,16 @@ using namespace hise;
 using namespace juce;
 
 
-
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+struct NodeProfiler: public DebugSession::ProfileDataSource::ScopedProfiler
+{
+	NodeProfiler(NodeBase* n, int numSamples_) :
+	  ScopedProfiler(n->getRootNetwork()->getCpuProfileFlag() ? n->profileData : nullptr, dynamic_cast<ApiProviderBase::Holder*>(n->getScriptProcessor()))
+	{}
+};
+#else
+using NodeProfiler = DummyNodeProfiler;
+#endif
 
 
 
@@ -54,10 +63,10 @@ public:
 		ExportAsCpp = 1,
 		ExportAsCppProject,
 		ExportAsSnippet,
+		ExportAsTemplate,
 		CreateScreenShot,
 		EditProperties,
-		UnfreezeNode,
-		FreezeNode,
+		ExplodeLocalCables,
 		WrapIntoDspNetwork,
 		WrapIntoChain,
 		WrapIntoSplit,
@@ -78,6 +87,7 @@ public:
 
 	struct Header : public Component,
 		public ButtonListener,
+        public SettableTooltipClient,
 		public DragAndDropTarget
 	{
 		Header(NodeComponent& parent_);
@@ -87,9 +97,15 @@ public:
 		String getPowerButtonId(bool getOff) const;
 
 		void updatePowerButtonState(Identifier id, var newValue);
+		void updateConnectionButton(Identifier id, var newValue);
 
 		void paint(Graphics& g) override;
 		void resized() override;
+
+		bool keyPressed(const KeyPress& key) override
+		{
+			return parent.keyPressed(key);
+		}
 
 		void mouseDoubleClick(const MouseEvent& event) override;
 		void mouseDown(const MouseEvent& e) override;
@@ -142,6 +158,10 @@ public:
 			repaint();
 		}
 
+		void setShowRenameLabel(bool shouldShow);
+
+		ScopedPointer<TextEditor> renameLabel;
+
 		NodeComponent& parent;
 		Factory f;
 
@@ -150,12 +170,14 @@ public:
 		valuetree::RecursiveTypedChildListener dynamicPowerUpdater;
 
 		valuetree::PropertyListener powerButtonUpdater;
+		valuetree::PropertyListener parameterUpdater;
 		valuetree::PropertyListener colourUpdater;
 		HiseShapeButton powerButton;
 		HiseShapeButton deleteButton;
 		HiseShapeButton parameterButton;
-		HiseShapeButton freezeButton;
-		
+
+		TextButton autofixButton;
+
 		bool isDragging = false;
 
 		ComponentDragger d;
@@ -163,47 +185,30 @@ public:
 		bool isHoveringOverBypass = false;
 	};
 
-	struct EmbeddedNetworkBar : public Component,
-							    public ButtonListener
-	{
-		EmbeddedNetworkBar(NodeBase* n);
-
-		void paint(Graphics& g) override
-		{
-			g.setColour(Colour(0x1e000000));
-			auto b = getLocalBounds().reduced(1, 0);
-			g.fillRect(b);
-			g.setColour(Colours::white.withAlpha(0.1f));
-			g.drawHorizontalLine(getHeight(), 1.0f, (float)getWidth() - 2.0f);
-		}
-
-		void buttonClicked(Button* b) override;
-
-		void resized() override;
-
-		struct Factory : public PathFactory
-		{
-			Path createPath(const String& url) const override;
-		} f;
-
-		void updateFreezeState(const Identifier& id, const var& newValue);
-
-		HiseShapeButton gotoButton;
-		HiseShapeButton freezeButton;
-		HiseShapeButton warningButton;
-
-		valuetree::PropertyListener freezeUpdater;
-
-		WeakReference<NodeBase> parentNode;
-		WeakReference<DspNetwork> embeddedNetwork;
-	};
-
 	NodeComponent(NodeBase* b);;
 	virtual ~NodeComponent();
+
+	struct PositionHelpers
+	{
+		static juce::Rectangle<int> getPositionInCanvasForStandardSliders(const NodeBase* n, Point<int> topLeft);
+
+		static juce::Rectangle<int> createRectangleForParameterSliders(const NodeBase* n, int numColumns);
+	};
 
 	void paint(Graphics& g) override;
 	void paintOverChildren(Graphics& g) override;
 	void resized() override;
+
+	bool keyPressed(const KeyPress& key) override
+	{
+		if(key == KeyPress::F2Key)
+		{
+			header.setShowRenameLabel(true);
+			return true;
+		}
+
+		return false;
+	}
 
 	MarkdownLink getLink() const override;
 
@@ -257,7 +262,6 @@ public:
 
 	ReferenceCountedObjectPtr<NodeBase> node;
 	Header header;
-	ScopedPointer<EmbeddedNetworkBar> embeddedNetworkBar;
 
 	valuetree::PropertyListener repaintListener;
 

@@ -270,7 +270,8 @@ struct HiseJavascriptEngine::RootObject::ExpressionTreeBuilder : private TokenIt
 {
 	ExpressionTreeBuilder(const String code, const String externalFile, HiseJavascriptPreprocessor::Ptr preprocessor_) :
 		TokenIterator(code, externalFile),
-		preprocessor(preprocessor_)
+		preprocessor(preprocessor_),
+	    currentErrorLocation(nullptr)
 	{
 #if ENABLE_SCRIPTING_BREAKPOINTS
 		if (externalFile.isNotEmpty())
@@ -392,6 +393,8 @@ struct HiseJavascriptEngine::RootObject::ExpressionTreeBuilder : private TokenIt
 			}
 		}
 
+		b->closeLocation = location.location;
+
 		return b.release();
 	}
 
@@ -497,6 +500,7 @@ struct HiseJavascriptEngine::RootObject::ExpressionTreeBuilder : private TokenIt
 			return rhs.release();
 		}
 
+		if (matchIf(TokenTypes::arrow))				return parseArrowFunction(lhs);
 		if (matchIf(TokenTypes::question))          return parseTerneryOperator(lhs);
 		if (matchIf(TokenTypes::assign))            { ExpPtr rhs(parseExpression()); return new Assignment(location, lhs, rhs); }
 		if (matchIf(TokenTypes::plusEquals))        return parseInPlaceOpExpression<AdditionOp>(lhs);
@@ -542,7 +546,20 @@ private:
 		return currentNamespace;
 	}
 
-	void throwError(const String& err) const  { location.throwError(err); }
+	void throwError(const String& err) const
+	{
+		if(currentErrorLocation.getAddress() != nullptr)
+		{
+			auto copy = location;
+			copy.location = currentErrorLocation;
+			copy.throwError(err);
+		}
+		else
+		{
+			location.throwError(err);
+		}
+		
+	}
 
 	template <typename OpType>
 	Expression* parseInPlaceOpExpression(ExpPtr& lhs)
@@ -649,10 +666,12 @@ private:
 		else if(typeId == ScopedBypasser::getStaticId())
 		{
 			match(TokenTypes::openParen);
-			auto b = parseExpression();
+			ExpPtr b = parseExpression();
+            match(TokenTypes::comma);
+            ExpPtr send = parseExpression();
 			match(TokenTypes::closeParen);
 
-			return new ScopedBypasser(location, condition, b);
+			return new ScopedBypasser(location, condition, b.release(), send.release());
 		}
 		else if(typeId == ScopedTracer::getStaticId())
 		{
@@ -672,6 +691,41 @@ private:
 
 			return new ScopedProfiler(location, condition, name);
 		}
+        else if(typeId == ScopedCall::getStaticId())
+        {
+            match(TokenTypes::openParen);
+            
+            ExpPtr f = parseExpression();
+
+            ScopedPointer<ScopedCall> c = new ScopedCall(location, condition, f.release());
+
+            OwnedArray<Expression> args;
+            
+            if(matchIf(TokenTypes::comma))
+            {
+                while(true)
+                {
+                    if(matchIf(TokenTypes::closeParen))
+                        break;
+                    if(matchIf(TokenTypes::eof))
+                        break;
+
+                    args.add(parseExpression());
+                    
+                    matchIf(TokenTypes::comma);
+                }
+            }
+            else
+                match(TokenTypes::closeParen);
+            
+            for(int i = 0; i < args.size(); i++)
+                c->argValues.add(var());
+            
+            c->args.swapWith(args);
+            
+            return c.release();
+        }
+        
 		else if(typeId == ScopedCounter::getStaticId())
 		{
 			match(TokenTypes::openParen);
@@ -724,6 +778,16 @@ private:
 
 			return new ScopedNoop(location, condition);
 		}
+		else if(typeId == ScopedSampling::getStaticId())
+		{
+			ScopedPointer<ScopedSampling> ss = new ScopedSampling(location, condition);
+			
+			match(TokenTypes::openParen);
+			ss->name = parseExpression();
+			match(TokenTypes::closeParen);
+
+			return ss.release();
+		}
 		else if(typeId == ScopedPrinter::getStaticId())
 		{
 			match(TokenTypes::openParen);
@@ -736,7 +800,10 @@ private:
 		else if(typeId == ScopedLocker::getStaticId())
 		{
 			match(TokenTypes::openParen);
-			auto l = (int)parseExpression()->getResult(Scope(nullptr, nullptr, nullptr));
+            
+            ExpPtr lt = parseExpression();
+            
+			auto l = (int)lt->getResult(Scope(nullptr, nullptr, nullptr));
 			match(TokenTypes::closeParen);
 
 			return new ScopedLocker(location, condition, (LockHelpers::Type)l);
@@ -1790,6 +1857,43 @@ private:
 		return s.release();
 	}
 
+	Expression* parseArrowFunction(ExpPtr lhs)
+	{
+		ScopedPointer<FunctionObject> fo = new FunctionObject();
+
+		fo->location.fileName = location.getCallbackName(true);
+		fo->location.charNumber = location.getCharIndex();
+
+		if(auto el = dynamic_cast<ExpressionList*>(lhs.get()))
+		{
+			for(auto c: el->children)
+			{
+				if(auto n = dynamic_cast<UnqualifiedName*>(c))
+				{
+					fo->parameters.add(n->name);
+				}
+			}
+		}
+		if(auto n = dynamic_cast<UnqualifiedName*>(lhs.get()))
+		{
+			fo->parameters.add(n->name);
+		}
+
+		if(matchIf(TokenTypes::openBrace))
+		{
+			fo->body = parseStatementList();
+			match(TokenTypes::closeBrace);
+		}
+		else
+		{
+			auto returnValue = parseExpression();
+			fo->body = new ReturnStatement(location, returnValue);
+		}
+		
+		ExpPtr nm(new UnqualifiedName(location, "unusedArrow", true)), value(new LiteralValue(location, var(fo.release())));
+		return new Assignment(location, nm, value);
+	}
+
 	var parseFunctionDefinition(Identifier& functionName)
 	{
 		
@@ -1830,8 +1934,28 @@ private:
 		return matchCloseParen(s.release());
 	}
 
+	struct ScopedErrorLocation
+	{
+		ScopedErrorLocation(ExpressionTreeBuilder& tb):
+		  parent(tb)
+		{
+			parent.currentErrorLocation = parent.location.location;
+		}
+
+		~ScopedErrorLocation()
+		{
+			parent.currentErrorLocation = {};
+		}
+
+		ExpressionTreeBuilder& parent;
+	};
+
+	String::CharPointerType currentErrorLocation;
+
 	Expression* parseApiExpression()
 	{
+		ScopedErrorLocation loc(*this);
+
 		const Identifier apiId = parseIdentifier();
 		const int apiIndex = hiseSpecialData->apiIds.indexOf(apiId);
 		ApiClass *apiClass = hiseSpecialData->apiClasses.getUnchecked(apiIndex).get();
@@ -1878,25 +2002,36 @@ private:
         
 		ScopedPointer<ApiCall> s = new ApiCall(location, apiClass, numArgs, functionIndex, pt);
 
-		match(TokenTypes::openParen);
+#if ENABLE_SCRIPTING_BREAKPOINTS
+		s->functionName = functionName.toString();
+#endif
 
-		int numActualArguments = 0;
-
-		while (currentType != TokenTypes::closeParen)
+		if(matchIf(TokenTypes::openParen))
 		{
-			if (numActualArguments < numArgs)
+			int numActualArguments = 0;
+
+			while (currentType != TokenTypes::closeParen)
 			{
-				s->argumentList[numActualArguments++] = parseExpression();
+				if (numActualArguments < numArgs)
+				{
+					s->argumentList[numActualArguments++] = parseExpression();
 
-				if (currentType != TokenTypes::closeParen)
-					match(TokenTypes::comma);
+					if (currentType != TokenTypes::closeParen)
+						match(TokenTypes::comma);
+				}
+				else throwError("Too many arguments in API call " + prettyName + "(). Expected: " + String(numArgs));
 			}
-			else throwError("Too many arguments in API call " + prettyName + "(). Expected: " + String(numArgs));
+
+			if (numArgs != numActualArguments) throwError("Call to " + prettyName + "(): argument number mismatch : " + String(numActualArguments) + " (Expected : " + String(numArgs) + ")");
+
+			return matchCloseParen(s.release());
 		}
-
-		if (numArgs != numActualArguments) throwError("Call to " + prettyName + "(): argument number mismatch : " + String(numActualArguments) + " (Expected : " + String(numArgs) + ")");
-
-		return matchCloseParen(s.release());
+		else
+		{
+			ApiCall::DynamicCall call(location, apiClass, numArgs, functionIndex);
+			
+			return new LiteralValue(location, var(call));
+		}
 	}
 
 	Expression* parseConstExpression(JavascriptNamespace* ns=nullptr)
@@ -1964,8 +2099,34 @@ private:
 
 		if (matchIf(TokenTypes::plusplus))   return parsePostIncDec<AdditionOp>(input);
 		if (matchIf(TokenTypes::minusminus)) return parsePostIncDec<SubtractionOp>(input);
-
+		
 		return input.release();
+	}
+
+	Expression* parseCloseParen(Expression* ex)
+	{
+		ExpPtr e(ex);
+
+		ExpressionList* ne = nullptr;
+
+		while(!matchIf(TokenTypes::closeParen))
+		{
+			if(e == ex)
+			{
+				if(ne == nullptr)
+					ne = new ExpressionList(location);
+
+				ne->children.add(e.release());
+
+				e = ne;
+			}
+
+			match(TokenTypes::comma);
+
+			ne->children.add(parseExpression());
+		}
+
+		return e.release();
 	}
 
 	Expression* parseFactor(JavascriptNamespace* ns=nullptr)
@@ -2129,14 +2290,16 @@ private:
 						}
 					}
 
-					return parseSuffixes(new UnqualifiedName(location, parseIdentifier(), false));
+					auto loc = location;
+
+					return parseSuffixes(new UnqualifiedName(loc, parseIdentifier(), false));
 				}
 			}
 		}
 
 		auto prevLocation = location;
 
-		if (matchIf(TokenTypes::openParen))        return parseSuffixes(matchCloseParen(parseExpression()));
+		if (matchIf(TokenTypes::openParen))        return parseSuffixes(parseCloseParen(parseExpression()));
 		if (matchIf(TokenTypes::true_))            return parseSuffixes(new LiteralValue(prevLocation, (int)1));
 		if (matchIf(TokenTypes::false_))           return parseSuffixes(new LiteralValue(prevLocation, (int)0));
 		if (matchIf(TokenTypes::null_))            return parseSuffixes(new LiteralValue(prevLocation, var()));
@@ -2669,6 +2832,8 @@ void HiseJavascriptEngine::RootObject::execute(const String& code, bool allowCon
 
 	{
 		TRACE_SCRIPTING("parse script");
+
+		PROFILE_ONLY(DebugSession::ProfileDataSource::ScopedProfiler sp(parseProfileSource, hiseSpecialData.processor));
 		sl = tb.parseStatementList();
 	}
 	
@@ -2678,6 +2843,10 @@ void HiseJavascriptEngine::RootObject::execute(const String& code, bool allowCon
 
 	{
 		TRACE_SCRIPTING("run onInit callback");
+
+		PROFILE_ONLY(DebugSession::ProfileDataSource::ScopedProfiler sp(onInitProfileSource, hiseSpecialData.processor));
+		PROFILE_ONLY(sl->currentProfileRoot = onInitProfileSource);
+
 		sl->perform(Scope(nullptr, this, this), nullptr);
 	}
 

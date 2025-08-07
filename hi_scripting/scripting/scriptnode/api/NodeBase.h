@@ -45,8 +45,16 @@ class HardcodedNode;
 class RestorableNode;
 class NodeBase;
 
-struct HelpManager : ControlledObject
+struct HelpManager : ControlledObject,
+					 public PathFactory
 {
+	Path createPath(const String& id) const override
+	{
+		Path path;
+		path.loadPathFromData (ColumnIcons::commentIcon, SIZE_OF_PATH(ColumnIcons::commentIcon));
+		return path;
+	}
+
 	HelpManager(NodeBase* parent, ValueTree d);
 
 	struct Listener
@@ -62,14 +70,31 @@ struct HelpManager : ControlledObject
 		JUCE_DECLARE_WEAK_REFERENCEABLE(Listener);
 	};
 
+	~HelpManager();
+
+	void setCommentTooltip();
+
 	void update(Identifier id, var newValue);
 	void render(Graphics& g, Rectangle<float> area);
 	void addHelpListener(Listener* l);
 	void removeHelpListener(Listener* l);
 
+	void initCommentButton(Component* parentComponent);
+
+	void setShowComments(bool shouldShowComments);
+
 	Rectangle<float> getHelpSize() const;
 
+	bool isHelpBelow() const;
+
+	bool showCommentButton() const
+	{
+		return showButton;
+	}
+
 private:
+
+	bool showButton = false;
 
 	void rebuild();
 
@@ -79,10 +104,13 @@ private:
 	float lastWidth = 300.0f;
 	float lastHeight = 0.0f;
 
+	NodeBase& parent;
 	Array<WeakReference<HelpManager::Listener>> listeners;
 	ScopedPointer<hise::MarkdownRenderer> helpRenderer;
 	valuetree::PropertyListener commentListener;
 	valuetree::PropertyListener colourListener;
+
+	ScopedPointer<HiseShapeButton> commentButton;
 
 	JUCE_DECLARE_WEAK_REFERENCEABLE(HelpManager);
 };
@@ -92,7 +120,7 @@ class Parameter : public ConstScriptingObject
 {
 public:
 
-	/** Create an object of this type if you don't want to remove any connections when the node is
+	/* Create an object of this type if you don't want to remove any connections when the node is
 	    removed from the signal chain (eg. when dragging the node around). 
 	*/
 	struct ScopedAutomationPreserver
@@ -201,7 +229,8 @@ private:
 };
 
 /** A node in the DSP network. */
-class NodeBase : public ConstScriptingObject
+class NodeBase : public ConstScriptingObject,
+				 public ObjectWithJSONConverter
 {
 public:
 
@@ -227,6 +256,8 @@ public:
 		JUCE_DECLARE_WEAK_REFERENCEABLE(Holder);
 	};
 
+	JUCE_MAKE_STREAMABLE_OBJECT(6);
+
 	struct DynamicBypassParameter : public parameter::dynamic_base
 	{
 		struct ScopedUndoDeactivator
@@ -251,6 +282,8 @@ public:
 		String prevId;
 	};
 
+	DebugSession::ProfileDataSource::Ptr profileData;
+
 	NodeBase(DspNetwork* rootNetwork, ValueTree data, int numConstants);;
 	virtual ~NodeBase();
 
@@ -265,6 +298,8 @@ public:
 	virtual bool forEach(const std::function<bool(NodeBase::Ptr)>& f);
 
 	virtual void processMonoFrame(MonoFrameType& data);
+
+	virtual void connectToRuntimeTarget(bool shouldConnect) {};
 
 	template <typename T> T* findParentNodeOfType() const
 	{
@@ -336,14 +371,33 @@ public:
 	/** Inserts the node into the given parent container. */
 	void setParent(var parentNode, int indexInParent);
 
-	/** Returns a reference to a parameter.*/
 	var getParameter(var indexOrId) const;
+
+	/** Returns a reference to a parameter or creates a parameter (if non existent and possible).*/
+	var getOrCreateParameter(var indexOrId) const;
 
 	/** Returns the number of parameters. */
 	int getNumParameters() const;;
 
 	/** Returns a list of child nodes if this node is a container. */
 	var getChildNodes(bool recursive);
+
+	void writeAsJSON (OutputStream& os, int indentLevel, bool allOnOneLine, int maximumDecimalPlaces) override
+	{
+		auto obj = ValueTreeConverters::convertScriptNodeToDynamicObject(getValueTree());
+		return obj.getDynamicObject()->writeAsJSON(os, indentLevel, allOnOneLine, maximumDecimalPlaces);
+	}
+
+    void writeToStream(OutputStream& os) override
+    {
+	    jassertfalse;
+    }
+
+	static ObjectWithJSONConverter* createFromStream(InputStream& input)
+	{
+		jassertfalse;
+		return nullptr;
+	}
 
 	// ============================================================================================= END NODE API
 
@@ -380,6 +434,17 @@ public:
 	NodeBase* getParentNode() const;
 	ValueTree getValueTree() const;
 	String getId() const;
+
+	String getName() const
+	{
+		auto nid = getValueTree()[PropertyIds::Name].toString();
+
+		if(nid.isEmpty())
+			return getId();
+
+		return nid;
+	}
+
 	UndoManager* getUndoManager(bool returnIfPending=false) const;
     
 	Rectangle<int> getBoundsToDisplay(Rectangle<int> originalHeight) const;
@@ -430,11 +495,6 @@ public:
 
 	bool isClone() const;
 
-	void setEmbeddedNetwork(NodeBase::Holder* n);
-
-	DspNetwork* getEmbeddedNetwork();
-	const DspNetwork* getEmbeddedNetwork() const;
-
 	bool& getPreserveAutomationFlag();
 
 	int getCurrentChannelAmount() const;;
@@ -467,16 +527,12 @@ private:
 	
 	mutable String dynamicBypassId;
 
-	void updateFrozenState(Identifier id, var newValue);
-
 	bool containsNetwork = false;
 
-	valuetree::PropertyListener frozenListener;
 	valuetree::PropertyListener bypassListener;
 
 	bool bypassState = false;
 
-	WeakReference<NodeBase::Holder> embeddedNetwork;
 	WeakReference<NodeBase::Holder> parent;
 	WeakReference<NodeBase::Holder> subHolder;
 	
@@ -493,8 +549,6 @@ private:
 
 	JUCE_DECLARE_WEAK_REFERENCEABLE(NodeBase);
 };
-
-#define ENABLE_NODE_PROFILING 1
 
 struct DummyNodeProfiler
 {
@@ -530,25 +584,6 @@ struct FrameDataPeakChecker
 	NodeBase& p;
 	dyn<float> b;
 };
-
-struct RealNodeProfiler
-{
-	RealNodeProfiler(NodeBase* n, int numSamples);
-
-	~RealNodeProfiler();
-
-	NodeBase* node;
-	bool enabled;
-	double& profileFlag;
-	double start;
-	const int numSamples;
-};
-
-#if ENABLE_NODE_PROFILING
-using NodeProfiler = RealNodeProfiler;
-#else
-using NodeProfiler = DummyNodeProfiler;
-#endif
 
 struct ConnectionSourceManager
 {

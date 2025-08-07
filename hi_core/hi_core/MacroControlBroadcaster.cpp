@@ -155,8 +155,18 @@ namespace hise { using namespace juce;
 			}
 
 			newValue = pd->getParameterRange().convertTo0to1(newValue);
-			
-			ap->setParameterNotifyingHost(macroIndex, newValue);
+
+			for(auto p: ap->getParameters())
+			{
+				if(auto typed = dynamic_cast<HisePluginParameterBase*>(p))
+				{
+					if(typed->getType() == HisePluginParameterBase::Type::Macro && typed->matchesIndex(macroIndex))
+					{
+						p->setValueNotifyingHost(newValue);
+						break;
+					}
+				}
+			}
 		}
 
 #endif
@@ -217,7 +227,11 @@ namespace hise { using namespace juce;
         
 
 #if USE_BACKEND
-		for(int i = 0; i < HISE_NUM_MACROS; i++)
+
+		auto mc = thisAsSynth->getMainController();
+		auto numMacros = HISE_GET_PREPROCESSOR(mc, HISE_NUM_MACROS);
+
+		for(int i = 0; i < numMacros; i++)
 		{
 			auto md = getMacroControlData(i);
 
@@ -338,20 +352,24 @@ namespace hise { using namespace juce;
 MacroControlBroadcaster::MacroControlBroadcaster(ModulatorSynthChain *chain):
 	thisAsSynth(chain)
 {
-	for(int i = 0; i < HISE_NUM_MACROS; i++)
+	auto mc = thisAsSynth->getMainController();
+	auto numMacros = HISE_GET_PREPROCESSOR(mc, HISE_NUM_MACROS);
+
+	for(int i = 0; i < numMacros; i++)
 	{
-		macroControls.add(new MacroControlData(i, *this, chain->getMainController()));
+		macroControls.add(new MacroControlData(i, *this, mc));
 	}
 }
 
 
 /** Creates a new Parameter data object. */
-MacroControlBroadcaster::MacroControlledParameterData::MacroControlledParameterData(Processor *p, int  parameter_, const String &parameterName_, NormalisableRange<double> range_, bool readOnly):
+MacroControlBroadcaster::MacroControlledParameterData::MacroControlledParameterData(Processor *p, int  parameter_, const String &parameterName_, const ValueToTextConverter& converter_, NormalisableRange<double> range_, bool readOnly):
     ControlledObject(p->getMainController()),
 	controlledProcessor(p),
 	id(p->getId()),
 	parameter(parameter_),
 	parameterName(parameterName_),
+	textConverter(converter_),
 	range(range_),
 	parameterRange(range_),
 	inverted(false),
@@ -363,6 +381,7 @@ MacroControlBroadcaster::MacroControlledParameterData::MacroControlledParameterD
   id(""),
   parameter(-1),
   parameterName(""),
+  textConverter({}),
   controlledProcessor(nullptr),
   range(0.0, 1.0),
   parameterRange(0.0, 1.0),
@@ -389,11 +408,12 @@ void MacroControlBroadcaster::MacroControlledParameterData::setAttribute(double 
 				d->call(value, dispatch::DispatchType::sendNotificationSync);
 		}
 		else
-			controlledProcessor.get()->setAttribute(parameter, value, readOnly ? sendNotificationSync : dontSendNotification);
+		{
+			controlledProcessor.get()->setAttribute(parameter, value, sendNotificationSync);
+			//controlledProcessor.get()->setAttribute(parameter, value, readOnly ? sendNotificationSync : dontSendNotification);
+		}
 	}
-	
 };
-
 		
 
 bool MacroControlBroadcaster::MacroControlledParameterData::matchesCustomAutomation(const Identifier& id) const
@@ -441,6 +461,7 @@ ValueTree MacroControlBroadcaster::MacroControlledParameterData::exportAsValueTr
 	v.setProperty("step", parameterRange.interval, nullptr);
 	v.setProperty("inverted", inverted, nullptr);
 	v.setProperty("readonly", readOnly, nullptr);
+	v.setProperty("converter", textConverter.toString(), nullptr);
 
 	return v;
 }
@@ -461,9 +482,11 @@ void MacroControlBroadcaster::MacroControlledParameterData::restoreFromValueTree
     
     parameterRange.skew = v.getProperty("skew", 1.0);
     parameterRange.interval = v.getProperty("step", 0.0);
+	range.skew = parameterRange.skew;
     inverted = v.getProperty("inverted", false);
     readOnly = v.getProperty("readonly", true);
-    
+	textConverter = ValueToTextConverter::fromString(v.getProperty("converter", ""));
+
     controlledProcessor = findProcessor(getMainController()->getMainSynthChain(), id);
 
     if(controlledProcessor == nullptr)
@@ -538,7 +561,9 @@ void MacroControlBroadcaster::loadMacrosFromValueTree(const ValueTree &v, bool l
 	{
 		sendMacroConnectionChangeMessageForAll(false);
 
-        int numToRestore = jmin(HISE_NUM_MACROS, macroControls.size(), macroData.getNumChildren());
+		auto numMacros = HISE_GET_PREPROCESSOR(thisAsSynth->getMainController(), HISE_NUM_MACROS);
+
+        int numToRestore = jmin(numMacros, macroControls.size(), macroData.getNumChildren());
         
         for(int i = 0; i < numToRestore; i++)
         {
@@ -566,8 +591,10 @@ void MacroControlBroadcaster::loadMacroValuesFromValueTree(const ValueTree &v)
         // The macro controls could not be found...
         return;
     }
-    
-    int numToRestore = jmin(HISE_NUM_MACROS, macroControls.size(), data.getNumChildren());
+
+	auto numMacros = HISE_GET_PREPROCESSOR(thisAsSynth->getMainController(), HISE_NUM_MACROS);
+
+	int numToRestore = jmin(numMacros, macroControls.size(), data.getNumChildren());
     
 	for (int i = 0; i < numToRestore; i++)
 	{
@@ -778,7 +805,7 @@ bool MacroControlBroadcaster::MacroControlData::hasParameter(Processor *p, int p
 }
 
 
-void MacroControlBroadcaster::MacroControlData::addParameter(Processor *p, int parameterId, const String &parameterName, NormalisableRange<double> range, bool readOnly, bool isUsingCustomData, NotificationType n)
+void MacroControlBroadcaster::MacroControlData::addParameter(Processor *p, int parameterId, const String &parameterName, const ValueToTextConverter& converter, NormalisableRange<double> range, bool readOnly, bool isUsingCustomData, NotificationType n)
 {
     if(p->getMainController()->getMacroManager().isExclusive())
     {
@@ -799,6 +826,7 @@ void MacroControlBroadcaster::MacroControlData::addParameter(Processor *p, int p
     auto nd = new MacroControlledParameterData(p,
                                                parameterId,
                                                parameterName,
+											   converter,
                                                range,
                                                readOnly);
     
@@ -897,7 +925,8 @@ int MacroControlBroadcaster::getMacroControlIndexForProcessorParameter(const Pro
 void MacroControlBroadcaster::addControlledParameter(int macroControllerIndex, 
 							const String &processorId, 
 							int parameterId, 
-							const String &parameterName,
+							const String& parameterName,
+					        const ValueToTextConverter& converter,
 							NormalisableRange<double> range,
 							bool readOnly)
 {
@@ -915,7 +944,7 @@ void MacroControlBroadcaster::addControlledParameter(int macroControllerIndex,
 			}
 		}
 
-		macroControls[macroControllerIndex]->addParameter(p, parameterId, parameterName, range, readOnly);
+		macroControls[macroControllerIndex]->addParameter(p, parameterId, parameterName, converter, range, readOnly);
 
 		p->sendOtherChangeMessage(dispatch::library::ProcessorChangeEvent::Macro);
 		thisAsSynth->sendOtherChangeMessage(dispatch::library::ProcessorChangeEvent::Macro);

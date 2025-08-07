@@ -107,6 +107,11 @@ public:
 			TooltipWindow(nullptr, 900)
 		{};
 
+		float getDesktopScaleFactor() const override
+		{
+			return Component::getDesktopScaleFactor();
+		}
+
 		String getTipFor(Component&component) override;
 	};
 
@@ -313,6 +318,7 @@ private:
 	bool projectIsBeingExtracted = false;
 
 	friend class ProjectImporter;
+	friend class multipage::library::NewProjectCreator;
 
 	FloatingTabComponent* getCodeTabs();
 
@@ -411,13 +417,6 @@ struct BackendPanelHelpers
 	};
 
 	static bool isMainWorkspaceActive(FloatingTile* root);
-
-#if JUCE_LINUX
-    // This might keep the fonts alive and increase the text
-    // rendering performance...
-    hise::LinuxFontHandler::Instance fontHandler;
-#endif
-
 };
 
 } // namespace hise

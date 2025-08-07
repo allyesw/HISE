@@ -247,7 +247,7 @@ inline Path MainTopBar::ClickablePeakMeter::PopupComponent::createPath(const Str
 	Path p;
 
 	LOAD_EPATH_IF_URL("freeze", HnodeIcons::freezeIcon);
-	LOAD_PATH_IF_URL("edit", ColumnIcons::threeDots);
+	LOAD_EPATH_IF_URL("edit", ColumnIcons::threeDots);
 	LOAD_EPATH_IF_URL("channels", HiBinaryData::SpecialSymbols::routingIcon);
 
 	return p;
@@ -1356,7 +1356,7 @@ void MainTopBar::ClickablePeakMeter::PopupComponent::Spec2DInfo::calculate(const
 	parameters->oversamplingFactor = rbo->getProperty("Oversampling");
 
 	spectrum.useAlphaChannel = true;
-	auto sb = spectrum.createSpectrumBuffer();
+	auto sb = spectrum.createSpectrumBuffer(false);
 	
 	auto newImage = spectrum.createSpectrumImage(sb);
 
@@ -1835,7 +1835,7 @@ void MainTopBar::ClickablePeakMeter::PopupComponent::EnvInfo::calculate(const Au
 	
 	span<float, 2> frame;
 
-	dynamics::envelope_follower follower[2];
+	dynamics::envelope_follower<1> follower[2];
 
 	follower[0].setAttack(0.0);
 	follower[0].setRelease(12.0);

@@ -271,11 +271,11 @@ struct RRDisplayComponent : public Component,
 			repaint();
 		};
 
+		midiButton.setToggleStateAndUpdateIcon(sampler->isDisplayGroupFollowingRRGroup());
+
 		midiButton.onClick = [this]()
 		{
-			auto isOn = midiButton.getToggleState();
-			auto idx = isOn ? sampler->getCurrentRRGroup() : -1;
-			sampler->setDisplayedGroup(idx, true, {}, sendNotificationSync);
+			sampler->setDisplayGroupFollowsRRGroup(midiButton.getToggleState());
 		};
 
 		sampler->getSampleEditHandler()->selectionBroadcaster.addListener(*this, setMainSelection);
@@ -299,7 +299,7 @@ struct RRDisplayComponent : public Component,
 	{
 		Path p;
 
-		LOAD_PATH_IF_URL("lock", ColumnIcons::lockIcon);
+		LOAD_EPATH_IF_URL("lock", ColumnIcons::lockIcon);
 		LOAD_EPATH_IF_URL("midi", SampleToolbarIcons::selectMidi);
 
 		return p;
@@ -308,12 +308,7 @@ struct RRDisplayComponent : public Component,
 	static void groupChanged(RRDisplayComponent& d, int rrGroup, BigInteger* visibleGroups)
 	{
 		if(visibleGroups != nullptr)
-			d.currentDisplayGroup = *visibleGroups;
-
-		if (d.midiButton.getToggleState())
-		{
-			d.sampler->setDisplayedGroup(rrGroup-1, true, {}, dontSendNotification);
-		}
+				d.currentDisplayGroup = *visibleGroups;
 
 		auto shouldLock = d.sampler->getMidiInputLockValue(SampleIds::RRGroup) != -1;
 		d.lockButton.setToggleStateAndUpdateIcon(shouldLock);
@@ -348,6 +343,9 @@ struct RRDisplayComponent : public Component,
 	{
 		void draw(Graphics& g) const
 		{
+			if(area.isEmpty())
+				return;
+
 			if (over)
 			{
 				g.setColour(Colours::white.withAlpha(0.05f));
@@ -385,7 +383,7 @@ struct RRDisplayComponent : public Component,
 		bool isActive = false;
 		bool isEmpty = false;
 		bool over = false;
-
+		
 		Rectangle<float> area;
 
 		
@@ -416,7 +414,7 @@ struct RRDisplayComponent : public Component,
 			auto r = m.showAt(this);
 
 			if(r != 0)
-				sampler->setDisplayedGroup(r, true, e.mods, sendNotificationSync);
+				sampler->setDisplayedGroup(r-1, true, e.mods, sendNotificationSync);
 
 			return;
 		}
@@ -522,10 +520,23 @@ struct RRDisplayComponent : public Component,
 
 		b.removeFromRight(getWidth() - firstComponent->getX());
 
-		b = b.removeFromRight(states.size() * getHeight());
+		auto requiredWidth = states.size() * getHeight();
 
-		for (auto& s : states)
-			s.area = b.removeFromLeft(b.getHeight());
+		int offset = 1;
+
+		if(requiredWidth > b.getWidth())
+		{
+			offset = jlimit<int>(1, states.size(), roundToInt((requiredWidth - b.getWidth()) / b.getHeight()));
+		}
+
+		b = b.removeFromRight(requiredWidth);
+
+
+		for(int i = states.size() - 1; i > states.size() - offset; i--)
+			states.getReference(i).area = {};
+
+		for(int i = states.size() - offset; i >= 0; i--)
+			states.getReference(i).area = b.removeFromRight(b.getHeight());
 
 		repaint();
 	}
@@ -543,10 +554,6 @@ struct RRDisplayComponent : public Component,
 
 	void paint(Graphics& g) override
 	{
-		auto b = getLocalBounds().toFloat().reduced(2.0f);
-
-		b = b.removeFromRight(states.size() * getHeight());
-
 		RectangleList<float> displayArea;
 
 		for (const auto& s : states)
@@ -561,7 +568,7 @@ struct RRDisplayComponent : public Component,
 			displayArea.clear();
 
 			auto limit = currentDisplayGroup.getHighestBit() + 1;
-			for (int i = 0; i < limit; i++)
+			for (int i = 0; i <= limit; i++)
 			{
 				if (currentDisplayGroup[i])
 					displayArea.addWithoutMerging(states[i].area);
@@ -611,6 +618,20 @@ SampleMapEditor::SampleMapEditor (ModulatorSampler *s, SamplerBody *b):
     addAndMakeVisible (numQuartersSetter = new ValueSettingComponent(s));
 
 	addAndMakeVisible(newRRDisplay = new RRDisplayComponent(sampler));
+
+	handler->complexGroupEventBroadcaster.addListener(*this, [](SampleMapEditor& editor, SampleEditHandler::ComplexGroupEvent e)
+	{
+		if(e == SampleEditHandler::ComplexGroupEvent::ComplexManagerDisabled)
+		{
+			editor.newRRDisplay->setVisible(true);
+			editor.rrGroupSetter->setVisible(true);
+		}
+		else
+		{
+			editor.newRRDisplay->setVisible(false);
+			editor.rrGroupSetter->setVisible(false);
+		}
+	});
 
     addAndMakeVisible (viewport = new Viewport ("new viewport"));
     viewport->setScrollBarsShown (false, true);
@@ -736,11 +757,11 @@ SampleMapEditor::SampleMapEditor (ModulatorSampler *s, SamplerBody *b):
 
 	getCommandManager()->commandStatusChanged();
 
-	handler->groupBroadcaster.addListener(*map->map, [](SamplerSoundMap& m, int rrGroup, BigInteger* displayedGroup)
-	{
-		if(displayedGroup != nullptr)
-			m.soloGroup(*displayedGroup);
-	});
+	
+
+	
+
+	
 
 	setFocusContainerType(FocusContainerType::keyboardFocusContainer);
 
@@ -830,7 +851,11 @@ void SampleMapEditor::resized()
     //[UserResized] Add your own custom resize handling here..
 
 	auto b = getLocalBounds().removeFromTop(24);
-	newRRDisplay->setBounds(b.removeFromRight(300));
+
+	b.removeFromLeft(520);
+
+
+	newRRDisplay->setBounds(b);
 
 	toolbar->setVisible(false);
 
@@ -1765,7 +1790,7 @@ juce::Path SampleMapEditor::Factory::createPath(const String& name) const
 	
 	LOAD_EPATH_IF_URL("trim-sample-start", SampleMapIcons::trimSampleStart);
 	
-	LOAD_PATH_IF_URL("rebuild", ColumnIcons::moveIcon);
+	LOAD_EPATH_IF_URL("rebuild", ColumnIcons::moveIcon);
 	
 	return p;
 }

@@ -50,7 +50,9 @@ String PseudoState::getPseudoElementName(int idx)
 	static const StringArray list({
 		"none ",
 		"before",
+		"before2"
 		"after",
+		"after2"
 		"all"
 	});
 
@@ -60,14 +62,40 @@ String PseudoState::getPseudoElementName(int idx)
 	return "Unknown";
 }
 
+int PseudoState::getPseudoClassIndex(const String& pseudoStateName)
+{
+	int state = 0;
+	
+	if(pseudoStateName.contains(":first-child"))
+		state |= (int)PseudoClassType::First;
+	if(pseudoStateName.contains(":last-child"))
+		state |= (int)PseudoClassType::Last;
+	if(pseudoStateName.contains(":root"))
+		state |= (int)PseudoClassType::Root;
+	if(pseudoStateName.contains(":hover"))
+		state |= (int)PseudoClassType::Hover;
+	if(pseudoStateName.contains(":active"))
+		state |= (int)PseudoClassType::Active;
+	if(pseudoStateName.contains(":focus"))
+		state |= (int)PseudoClassType::Focus;
+	if(pseudoStateName.contains(":disabled"))
+		state |= (int)PseudoClassType::Disabled;
+	if(pseudoStateName.contains(":hidden"))
+		state |= (int)PseudoClassType::Hidden;
+	if(pseudoStateName.contains(":checked"))
+		state |= (int)PseudoClassType::Checked;
+
+	return state;
+}
+
 String PseudoState::getPseudoClassName(int state)
 {
 	String c;
         
 	if((state & (int)PseudoClassType::First) > 0)
-		c << ":first";
+		c << ":first-child";
 	if((state & (int)PseudoClassType::Last) > 0)
-		c << ":last";
+		c << ":last-child";
 	if((state & (int)PseudoClassType::Root) > 0)
 		c << ":root";
 	if((state & (int)PseudoClassType::Hover) > 0)
@@ -82,6 +110,8 @@ String PseudoState::getPseudoClassName(int state)
 		c << ":hidden";
 	if((state & (int)PseudoClassType::Checked) > 0)
 		c << ":checked";
+	if((state & (int)PseudoClassType::Empty) > 0)
+		c << ":empty";
 
 	return c;
 }
@@ -110,12 +140,14 @@ Selector::Selector(ElementType dt)
 	case ElementType::Headline3: name = "h3"; break;
 	case ElementType::Headline4: name = "h4"; break;
 	case ElementType::Label: name = "label"; break;
+	case ElementType::Scrollbar: name = "scrollbar"; break;
 	default: ;
 	}
 }
 
 Selector::Selector(const String& s)
 {
+	
 	auto firstChar = s[0];
 
 	switch(firstChar)
@@ -141,6 +173,8 @@ Selector::Selector(const String& s)
 		name = s;
 		break;
 	}
+
+	jassert(name.isNotEmpty());
 }
 
 Selector::Selector(SelectorType t, String n):
@@ -425,14 +459,14 @@ String Transition::toString() const
 
 	if(active)
 	{
-		s << " trans(";
-		s << "dur:" << String(duration, 2) << "s, ";
-		s << "del:" << String(duration, 2) << "s";
+		s << ";\n  transition: %TR% ";
+		s << String(duration, 2) << "s";
+
+		if(delay != 0.0)
+			s << " " << String(delay, 2) << "s";
 
 		if(f)
-			s << ", f: true";
-
-		s << ')';
+			s << " " << fName;
 	}
 
 	return s;
@@ -538,7 +572,12 @@ String PropertyValue::getValue(DynamicObject::Ptr variables)
 String PropertyValue::toString() const
 {
 	String s;
-	s << valueAsString;
+
+	if(valueAsString.isEmpty() || valueAsString.containsAnyOf("\t \n"))
+		s << valueAsString.quoted('\'');
+	else
+		s << valueAsString;
+
 	s << transition.toString();
 	return s;
 }
@@ -623,7 +662,7 @@ PropertyValue Property::getProperty(int stateFlag) const
 }
 
 NonUniformBorderData::NonUniformBorderData(Rectangle<float> totalArea_, float defaultWidth_,
-	const std::pair<Colour, ColourGradient>& defaultColor_):
+	const ColourInfo& defaultColor_):
 	defaultColour(defaultColor_),
 	defaultWidth(defaultWidth_),
 	totalArea(totalArea_)
@@ -675,7 +714,7 @@ void NonUniformBorderData::setBorderSize(Border b, float newSize)
 	active |= std::abs(newSize - defaultWidth) > 0.001f;
 }
 
-void NonUniformBorderData::setBorderColour(Border b, const std::pair<Colour, ColourGradient>& c)
+void NonUniformBorderData::setBorderColour(Border b, const ColourInfo& c)
 {
 	auto prevColour = data[b].second;
 	data[b].second = c;

@@ -82,6 +82,8 @@ public:
 		MenuProjectNew = 0x20000,
 		MenuProjectLoad,
 		MenuProjectShowInFinder,
+		MenuFileShowHiseAppDataFolder,
+		MenuFileShowProjectAppDataFolder,
 		MenuProjectRecentOffset,
 		// ------------------------
 		MenuSnippetFileNew = 0x22000,
@@ -110,6 +112,8 @@ public:
 		MenuRevertFile = 0x26000,
         
 		// Export Menu
+		MenuExportSetupWizard,
+		MenuExportCompileProject,
 		MenuExportFileAsPlugin,
 		MenuExportFileAsEffectPlugin,
 		MenuExportFileAsMidiFXPlugin,
@@ -127,6 +131,7 @@ public:
 		MenuExportUnloadAllSampleMaps,
 		MenuExportUnloadAllAudioFiles,
 		MenuExportCleanBuildDirectory,
+		MenuExportCleanDspNetworkFiles,
 		// --------------------------------------
 		MenuExportSampleDataForInstaller,
 		MenuExportCompileFilesInPool,
@@ -188,10 +193,13 @@ public:
 		// DSP Tools
 		MenuToolsEnableDebugLogging,
 		MenuToolsShowDspNetworkDllInfo,
+		MenuToolsReplaceScriptFXWithHardcodedFX,
 		MenuToolsRecordOneSecond,
 		MenuToolsSimulateChangingBufferSize,
         MenuToolsCreateRnboTemplate,
 		MenuToolsCreateThirdPartyNode,
+		MenuToolsCreateGlobalCableCppCode,
+		MenuToolsCheckLatency,
 		// ----------------------------------
 		// License Management
 		MenuToolsCreateRSAKeys,
@@ -254,13 +262,8 @@ public:
 
    
     
-	void setCommandTarget(ApplicationCommandInfo &result, const String &name, bool active, bool ticked, char shortcut, bool useShortCut=true, ModifierKeys mod=ModifierKeys::commandModifier) {
-		result.setInfo(name, name, "Unused", 0);
-		result.setActive(active); 
-		result.setTicked(ticked);
-
-		if (useShortCut) result.addDefaultKeypress(shortcut, mod);
-	};
+	void setCommandTarget(ApplicationCommandInfo &result, const String &name, bool active, bool ticked, char shortcut, bool useShortCut=true, ModifierKeys mod=ModifierKeys::commandModifier);
+	;
 
 	bool clipBoardNotEmpty() const { return SystemClipboard::getTextFromClipboard().isNotEmpty(); }
     
@@ -272,13 +275,7 @@ public:
 
 	bool perform(const InvocationInfo &info) override;
 	
-	void updateCommands()
-	{
-		mainCommandManager->commandStatusChanged();
-		createMenuBarNames();
-
-		menuItemsChanged();
-	}
+	void updateCommands();
 
 	void setCopyPasteTarget(CopyPasteTarget *newTarget);
 
@@ -314,11 +311,12 @@ public:
 		static void plotModulator(CopyPasteTarget *currentCopyPasteTarget);
 		static void resolveMissingSamples(BackendRootWindow *bpe);
 		static void setCompileTimeOut(BackendRootWindow * bpe);
-		static void toggleUseBackgroundThreadsForCompiling(BackendRootWindow * bpe);
 		static void toggleCompileScriptsOnPresetLoad(BackendRootWindow * bpe);
 		static void createNewProject(BackendRootWindow *bpe);
 		static void loadProject(BackendRootWindow *bpe);
 		static DialogWindowWithBackgroundThread* importProject(BackendRootWindow* bpe);
+
+		static void compileProject(BackendRootWindow* bpe);
 
 		static void extractProject(BackendRootWindow* bpe, const File& newProjectRoot, const File& sourceFile);
 
@@ -329,9 +327,9 @@ public:
 
 		static void loadFirstXmlAfterProjectSwitch(BackendRootWindow * bpe);
 
-		
 
-		
+		static void showAppDataFolder(BackendRootWindow* bpe, bool getProjectAppData);
+
 		static void showProjectInFinder(BackendRootWindow *bpe);
 		
 		static void loadUserPreset(BackendRootWindow *bpe, const File &fileToLoad);
@@ -352,7 +350,6 @@ public:
 		static void exportHiseProject(BackendRootWindow * bpe);
 		static Result exportInstrumentExpansion(BackendProcessor* bp);
 		static Result createSampleArchive(BackendProcessor* bp);
-
 
 		static void compileNetworksToDll(BackendRootWindow* bpe);
 		static void cleanBuildDirectory(BackendRootWindow * bpe);
@@ -393,6 +390,19 @@ public:
 		static void extractEmbeddedFilesFromSnippet(BackendRootWindow* bpe);
 
 		static void showExampleBrowser(BackendRootWindow* bpe);
+
+		static void setupExportWizard(BackendRootWindow* bpe);
+
+		static void exportProject(BackendRootWindow* bpe, int buildOption);
+
+		static void cleanDspNetworkFiles(BackendRootWindow* bpe);
+
+		static void createGlobalCableCppCode(BackendRootWindow* bpe);
+
+		static void exportAudio(BackendRootWindow* bpe);
+
+		static void replaceScriptModules(BackendRootWindow* bpe);
+		static void checkLatency(BackendRootWindow* bpe);
 	};
 
 private:
@@ -440,6 +450,11 @@ struct XmlBackupFunctions
 private:
 
 	static String getSanitiziedName(const String &id);
+};
+
+struct GitHashManager
+{
+	static void checkHash(const String& hashToUse, const std::function<void(const var&)>& finishCallbackWithNextHash);
 };
 
 } // namespace hise

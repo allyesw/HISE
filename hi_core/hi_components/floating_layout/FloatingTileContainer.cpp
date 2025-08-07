@@ -573,7 +573,12 @@ void FloatingTabComponent::fromDynamicObject(const var& objectData)
     
     if(t.isNotEmpty())
         cycleKeyId = Identifier(t);
-    
+
+	for(int i = 0; i < getNumComponents(); i++)
+	{
+		getComponent(i)->getLayoutData().setFoldState(0);
+	}
+
 	setCurrentTabIndex(getPropertyWithDefault(objectData, TabPropertyIds::CurrentTab));
 }
 
@@ -745,10 +750,10 @@ ResizableFloatingTileContainer::ResizableFloatingTileContainer(FloatingTile* par
 	Path p;
 
 	if (isVertical())
-		p.loadPathFromData(ColumnIcons::addRowIcon, sizeof(ColumnIcons::addRowIcon));
+		p.loadPathFromData(ColumnIcons::addRowIcon, ColumnIcons::addRowIcon_Size);
 	else
 
-		p.loadPathFromData(ColumnIcons::addColumnIcon, sizeof(ColumnIcons::addColumnIcon));
+		p.loadPathFromData(ColumnIcons::addColumnIcon, ColumnIcons::addColumnIcon_Size);
 
 	addButton->setShape(p, false, false, true);
 
@@ -1037,7 +1042,7 @@ ResizableFloatingTileContainer::InternalResizer::InternalResizer(ResizableFloati
 	setMouseCursor(parent_->isVertical() ? MouseCursor::UpDownResizeCursor : MouseCursor::LeftRightResizeCursor);
     }
 
-	resizeIcon.loadPathFromData(ColumnIcons::bigResizeIcon, sizeof(ColumnIcons::bigResizeIcon));
+	resizeIcon.loadPathFromData(ColumnIcons::bigResizeIcon, ColumnIcons::bigResizeIcon_Size);
 
 	if (!parent->isVertical())
 		resizeIcon.applyTransform(AffineTransform::rotation(float_Pi / 2.0f));

@@ -35,6 +35,7 @@
 
 namespace hise { using namespace juce;
 
+class StreamingSamplerVoice;
 
 /** This is a utility class that handles buffered sample streaming in a background thread.
 *
@@ -112,6 +113,10 @@ public:
 	/** Resets the loader (unloads the sound). */
 	void reset();
 
+	bool isWaitingForTimestretchSeek() const { return voiceToSeekTimestretchStart != nullptr; }
+
+	NotificationType waitForTimestretchSeek(StreamingSamplerVoice* v);
+
 	void clearLoader();
 
 	/** Calculates and returns the disk usage.
@@ -136,7 +141,38 @@ public:
 		nonRealtime = shouldBeNonRealtime;
 	}
 
+	bool isNonRealtime() const { return nonRealtime; }
+	
+
+#if HISE_SAMPLER_ALLOW_RELEASE_START
+
+	StreamingSamplerSound::ReleasePlayState getReleasePlayState() const noexcept
+	{
+		return releasePlayState;
+	}
+
+	void setSeekToReleaseStart()
+	{
+		seekToReleaseStart = true;
+		releasePlayState = StreamingSamplerSound::ReleasePlayState::Playing;
+	}
+
+	
+
 private:
+
+	StreamingSamplerSound::ReleasePlayState releasePlayState = StreamingSamplerSound::ReleasePlayState::Inactive;
+	bool seekToReleaseStart = false;
+
+#else
+
+	static constexpr StreamingSamplerSound::ReleasePlayState getReleasePlayState()
+	{
+		return StreamingSamplerSound::ReleasePlayState::Inactive;
+	}
+
+private:
+#endif
 
 	bool nonRealtime = false;
 
@@ -145,6 +181,10 @@ private:
 	// ============================================================================================ internal methods
 
 	int getNumSamplesForStreamingBuffers() const;
+
+	StreamingSamplerVoice* voiceToSeekTimestretchStart = nullptr;
+
+	bool seekTimestretchOnNextJob = false;
 
 	bool requestNewData();
 
@@ -225,6 +265,8 @@ public:
 
 	/** starts the streaming of the sound. */
 	void startNote(int midiNoteNumber, float velocity, SynthesiserSound* s, int /*currentPitchWheelPosition*/) override;
+
+	void skipTimestretchSilenceAtStart();
 
 	const StreamingSamplerSound *getLoadedSound();
 
@@ -310,9 +352,9 @@ public:
 		stretchRatio = jlimit(0.0625, 2.0, newRatio);
 	}
 
-	void setSkipLatency(bool shouldSkipLatency)
+	void setSkipLatency(NotificationType startOption)
 	{
-		skipLatency = shouldSkipLatency;
+		skipLatency = startOption;
 	}
 
 	void setTimestretchTonality(double tonality)
@@ -320,11 +362,62 @@ public:
 		timestretchTonality = jlimit(0.0, 1.0, tonality);
 	}
 
+#if HISE_SAMPLER_ALLOW_RELEASE_START
+	bool jumpToRelease()
+	{
+		auto s = getLoadedSound();
+		auto startOffset = s->getReleaseStart() - s->getSampleStart();
+		auto loopStart = s->getLoopStart() - s->getSampleStart();
+
+		// do not seek to the release trigger if the sample playback went past it
+		auto shouldSkip = roundToInt(voiceUptime) < startOffset;
+
+		// if the loop is enabled, always seek to the end
+		if(s->isLoopEnabled())
+			shouldSkip |= roundToInt(voiceUptime) > loopStart;
+		
+		if(shouldSkip)
+		{
+			jumpToReleaseOnNextRender = true;
+		}
+
+		return jumpToReleaseOnNextRender;
+	}
+
+#endif
+
+	bool isWaitingForTimestretchSeek() const
+	{
+		return loader.isWaitingForTimestretchSeek();
+	}
+
+	NotificationType initStretcher(float pitchRatio);
+
+	void setSuspendOnDelayedStartFunction(const std::function<void(bool, int)>& f, int voiceIndexToUse_)
+	{
+		delayedStartFunction = f;
+		voiceIndexForDelayedStart = voiceIndexToUse_;
+	}
+
 private:
+
+	friend class SampleLoader;
+
+	int voiceIndexForDelayedStart = -1;
+	std::function<void(bool, int)> delayedStartFunction;
+
+	bool stretcherNeedsInitialisation = false;
+
+#if HISE_SAMPLER_ALLOW_RELEASE_START
+	int releaseFadeDuration = 0;
+	double releaseFadeCounter = 0.0;
+	bool jumpToReleaseOnNextRender = false;
+	float releaseGain = 1.0f;
+#endif
 
 	double timestretchTonality = 0.0;
 
-	bool skipLatency = false;
+	NotificationType skipLatency = NotificationType::sendNotificationAsync;
 
 	double pitchCounter = 0.0;
 

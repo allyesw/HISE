@@ -12,6 +12,23 @@ struct HiseJavascriptEngine::RootObject::LiteralValue : public Expression
 	var value;
 };
 
+struct HiseJavascriptEngine::RootObject::ExpressionList : public Expression
+{
+	ExpressionList(const CodeLocation& l) noexcept : Expression(l) {}
+
+	var getResult(const Scope&) const override
+	{
+		jassertfalse;
+		return {};
+	}
+
+	bool isConstant() const override { return true; }
+
+	Statement* getChildStatement(int index) override { return children[index]; };
+
+	OwnedArray<Expression> children;
+};
+
 struct HiseJavascriptEngine::RootObject::UnqualifiedName : public Expression
 {
 	UnqualifiedName(const CodeLocation& l, const Identifier& n, bool isFunction) noexcept : Expression(l), name(n), allowUnqualifiedDefinition(isFunction) {}
@@ -27,6 +44,8 @@ struct HiseJavascriptEngine::RootObject::UnqualifiedName : public Expression
 
 		return v;
 	}
+
+	String getProfileName() const override { return name.toString(); }
 
 	Identifier getVariableName() const override { return name; }
 
@@ -241,6 +260,11 @@ struct HiseJavascriptEngine::RootObject::DotOperator : public Expression
 {
 	DotOperator(const CodeLocation& l, ExpPtr& p, const Identifier& c) noexcept : Expression(l), parent(p), child(c) {}
 
+	String getProfileName() const override
+	{
+		return parent->getProfileName() + "." + child;
+	}
+
 	var getResult(const Scope& s) const override
 	{
 		var p(parent->getResult(s));
@@ -364,6 +388,8 @@ struct HiseJavascriptEngine::RootObject::Assignment : public Expression
 		return value;
 	}
 
+	String getProfileName() const override { return " = "; }
+
 	Statement* getChildStatement(int index) override 
 	{
 		if (index == 0) return target.get();
@@ -420,6 +446,16 @@ struct HiseJavascriptEngine::RootObject::FunctionCall : public Expression
 	FunctionCall(const CodeLocation& l) noexcept : Expression(l) {}
 
 	var getResult(const Scope& s) const override;
+
+	String getProfileName() const override
+	{
+		String s;
+
+		if(object != nullptr)
+			s << object->getProfileName() << "()";
+
+		return  s;
+	}
 
 	var invokeFunction(const Scope& s, const var& function, const var& thisObject) const;
 
@@ -869,7 +905,9 @@ var HiseJavascriptEngine::RootObject::FunctionCall::invokeFunction(const Scope& 
 			if (o->hasMethod(dot->child)) // allow an overridden DynamicObject::invokeMethod to accept a method call.
 				return o->invokeMethod(dot->child, args);
 
-	location.throwError("This expression is not a function!"); return var();
+	auto& locToUse = object != nullptr ? object->location : location;
+
+	locToUse.throwError("This expression is not a function!"); return var();
 }
 
 

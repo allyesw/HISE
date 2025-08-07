@@ -41,7 +41,10 @@ void MacroComponent::addSynthChainToPopup(ModulatorSynthChain *parent, PopupMenu
 		{
 			PopupMenu sub;
 
-			for(int j = 0; j < HISE_NUM_MACROS; j++)
+			auto mc = msc->getMainController();
+			auto numMacros = HISE_GET_PREPROCESSOR(mc, HISE_NUM_MACROS);
+
+			for(int j = 0; j < numMacros; j++)
 			{
 				if(msc->hasActiveParameters(j))
 				{
@@ -74,7 +77,9 @@ MacroComponent::MacroComponent(BackendRootWindow* rootWindow_) :
 	
 	mlaf = new MacroKnobLookAndFeel();
 
-	for (int i = 0; i < HISE_NUM_MACROS; i++)
+	auto numMacros = HISE_GET_PREPROCESSOR(processor, HISE_NUM_MACROS);
+
+	for (int i = 0; i < numMacros; i++)
 	{
 		Slider *s = new Slider();
 		s->setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
@@ -348,6 +353,35 @@ void CachedViewport::InternalViewport::paint(Graphics &g)
 
 		g.drawImageTransformed(clippedImage, backScaler);
 	}
+}
+
+multipage::EncodedDialogBase::EncodedDialogBase(BackendRootWindow* bpe_, bool addBorder_):
+	ControlledObject(bpe_->getBackendProcessor()),
+	rootWindow(bpe_),
+	closeButton("close", nullptr, factory),
+	minimizeButton("minimize", nullptr, factory),
+	addBorder(addBorder_)
+{
+	addAndMakeVisible(closeButton);
+
+	closeButton.onClick = [this]()
+	{
+		if(dialog != nullptr)
+		{
+			dialog->cancel();
+		}
+	};
+
+	addChildComponent(minimizeButton);
+
+    minimizeButton.setTooltip("Minimize this task to the status bar");
+    
+	minimizeButton.onClick = [this]()
+	{
+		findParentComponentOfClass<BackendRootWindow>()->minimizeModalComponent(true, state.get());
+	};
+
+	closeButton.setVisible(addBorder);
 }
 
 BreadcrumbComponent::BreadcrumbComponent(ProcessorEditorContainer* container_) :

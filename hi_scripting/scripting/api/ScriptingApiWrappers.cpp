@@ -72,6 +72,7 @@ struct ScriptingApi::Content::Wrapper
 	static var addWebView(const var::NativeFunctionArgs& args);
 	static var addFloatingTile(const var::NativeFunctionArgs& args);
 	static var addMultipageDialog(const var::NativeFunctionArgs& args);
+	static var addDynamicContainer(const var::NativeFunctionArgs& args);
 	static var getComponent(const var::NativeFunctionArgs& args);
 	static var getAllComponents(const var::NativeFunctionArgs& args);
 	static var set(const var::NativeFunctionArgs& args);
@@ -80,6 +81,7 @@ struct ScriptingApi::Content::Wrapper
 	static var setRange(const var::NativeFunctionArgs& args);
 	static var setMode(const var::NativeFunctionArgs& args);
 	static var setStyle(const var::NativeFunctionArgs& args);
+	static var componentExists(const var::NativeFunctionArgs& args);
 	static var setPropertiesFromJSON(const var::NativeFunctionArgs& args);
 	static var setValuePopupData(const var::NativeFunctionArgs& args);
 	static var storeAllControlsAsPreset(const var::NativeFunctionArgs& args);
@@ -91,6 +93,7 @@ struct ScriptingApi::Content::Wrapper
 	static var setWidth(const var::NativeFunctionArgs& args);
     static var showModalTextInput(const var::NativeFunctionArgs& args);
 	static var setName(const var::NativeFunctionArgs& args);
+	static var getInterfaceSize(const var::NativeFunctionArgs& args);
     static var makeFrontInterface(const var::NativeFunctionArgs& args);
 	static var makeFullScreenInterface(const var::NativeFunctionArgs& args);
 	static var addItem(const var::NativeFunctionArgs& args);
@@ -352,6 +355,17 @@ var ScriptingApi::Content::Wrapper::addMultipageDialog(const var::NativeFunction
 	return var();
 }
 
+var ScriptingApi::Content::Wrapper::addDynamicContainer(const var::NativeFunctionArgs& args)
+{
+	if (ScriptingApi::Content* thisObject = GET_OBJECT(Content))
+	{
+		CHECK_ARGUMENTS("addDynamicContainer()", 3);
+		return thisObject->addDynamicContainer(Identifier(args.arguments[0]), args.arguments[1], args.arguments[2]);
+	}
+
+	return var();
+}
+
 
 var ScriptingApi::Content::Wrapper::getComponent(const var::NativeFunctionArgs& args)
 {
@@ -572,11 +586,23 @@ var ScriptingApi::Content::Wrapper::setName (const var::NativeFunctionArgs& args
 	return var();
 };
 
+var ScriptingApi::Content::Wrapper::getInterfaceSize (const var::NativeFunctionArgs& args)
+{
+    if (ScriptingApi::Content* thisObject = GET_OBJECT(Content))
+    {
+				CHECK_ARGUMENTS("getInterfaceSize()", 0);
+
+				return thisObject->getInterfaceSize();
+    }
+    
+    return var();
+};
+
 var ScriptingApi::Content::Wrapper::makeFrontInterface (const var::NativeFunctionArgs& args)
 {
     if (ScriptingApi::Content* thisObject = GET_OBJECT(Content))
     {
-        CHECK_ARGUMENTS("setName()", 2);
+        CHECK_ARGUMENTS("makeFrontInterface()", 2);
         
         thisObject->makeFrontInterface((int)args.arguments[0], (int)args.arguments[1]);
     }
@@ -596,6 +622,18 @@ var ScriptingApi::Content::Wrapper::makeFullScreenInterface(const var::NativeFun
 	return var();
 };
 
+
+var ScriptingApi::Content::Wrapper::componentExists(const var::NativeFunctionArgs& args)
+{
+	if (ScriptingApi::Content* thisObject = GET_OBJECT(Content))
+	{
+		CHECK_ARGUMENTS("componentExists()", 1);
+
+		return thisObject->componentExists(Identifier(args.arguments[0]));
+	}
+
+	return var();
+}
 
 
 var ScriptingApi::Content::Wrapper::setPropertiesFromJSON (const var::NativeFunctionArgs& args)

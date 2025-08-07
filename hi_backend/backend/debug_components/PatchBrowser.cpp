@@ -30,8 +30,6 @@
 *   ===========================================================================
 */
 
-#include "PatchBrowser.h"
-#include "PatchBrowser.h"
 
 namespace hise { using namespace juce;
 
@@ -55,8 +53,15 @@ showChains(false)
     addButton->setToggleModeWithColourChange(true);
 	addButton->setTooltip("Edit Module Tree");
     addButton->setToggleStateAndUpdateIcon(false);
-	
 	addCustomButton(addButton);
+
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	addAndMakeVisible(profileButton = new HiseShapeButton("profile", this, f));
+    profileButton->setToggleModeWithColourChange(true);
+	profileButton->setTooltip("Profile Audio rendering of the entire module tree");
+    profileButton->setToggleStateAndUpdateIcon(false);
+	addCustomButton(profileButton);
+#endif
 
 	window->getBackendProcessor()->getLockFreeDispatcher().addPresetLoadListener(this);
 
@@ -189,7 +194,7 @@ void PatchBrowser::showProcessorInPopup(Component* c, const MouseEvent& e, Proce
 
 		auto b = c->getLocalBounds();
 		b = bp->getLocalArea(c, b);
-		auto pe = dynamic_cast<ProcessorEditorContainer*>(DebugableObject::Helpers::showProcessorEditorPopup(e, c, p));
+		auto pe = dynamic_cast<ProcessorEditorContainer*>(DebugableObject::Helpers::showProcessorEditorPopup(c, p));
 		
 		Component::SafePointer<FloatingTilePopup> safePopup = ft->showComponentAsDetachedPopup(pe, bp, { b.getRight() + 50 + (CONTAINER_WIDTH)/2, b.getY() -10 }, true);
 
@@ -376,7 +381,7 @@ struct GlobalCableCollection : public SearchableListComponent::Collection,
 	};
 
 	GlobalCableCollection(var m, MainController* mc) :
-		Collection(),
+		Collection(0),
 		ControlledObject(mc),
 		SimpleTimer(mc->getGlobalUIUpdater()),
 		manager(dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(m.getObject())),
@@ -400,6 +405,8 @@ struct GlobalCableCollection : public SearchableListComponent::Collection,
 			addAndMakeVisible(items.getLast());
 		}
 	};
+
+	String getSearchTermForCollection() const override { return "GlobalCables"; }
 
 	static void rebuildList(GlobalCableCollection& c, scriptnode::routing::GlobalRoutingManager::SlotBase::SlotType t, StringArray idList)
 	{
@@ -494,7 +501,7 @@ SearchableListComponent::Collection * PatchBrowser::createCollection(int index)
 
 	jassert(index < synths.size());
 
-	return new PatchCollection(synths[index], hierarchies[index], showChains);
+	return new PatchCollection(index, synths[index], hierarchies[index], showChains);
 
 }
 
@@ -543,26 +550,9 @@ void PatchBrowser::paint(Graphics &g)
 		auto endPoint = c->getPointForTreeGraph(false).toFloat();
 		auto endPointInParent = getLocalPoint(c, endPoint);
 
-        bool paintUniform = false;
-        
-        if(auto ms = dynamic_cast<ModulatorSynth*>(c->getProcessor()))
-        {
-            if(ms->isUsingUniformVoiceHandler())
-                paintUniform = true;
-            
-            if(auto msc = dynamic_cast<ModulatorSynthChain*>(ms))
-            {
-                if(msc->isUniformVoiceHandlerRoot())
-                    paintUniform = false;
-            }
-        }
-        
-		g.setColour(paintUniform ? Colour(0xFF888888) :
-            Colour(0xFF222222));
-
+		g.setColour(Colour(0xFF222222));
 		g.drawLine((float)startPointInParent.getX(), (float)startPointInParent.getY(), (float)startPointInParent.getX(), (float)endPointInParent.getY(), 2.0f);
 		g.drawLine((float)startPointInParent.getX(), (float)endPointInParent.getY(), (float)endPointInParent.getX(), (float)endPointInParent.getY(), 2.0f);
-
 	}
     
     if(showChains)
@@ -593,6 +583,7 @@ void PatchBrowser::paint(Graphics &g)
         }
     }
     
+#if HISE_PAINT_GLOBAL_MOD_CONNECTIONS
     struct GlobalModCablePin
     {
         Processor* p = nullptr;
@@ -663,6 +654,7 @@ void PatchBrowser::paint(Graphics &g)
         
         x += 2.0f;
     }
+#endif
 }
 
 void PatchBrowser::paintOverChildren(Graphics& g)
@@ -724,6 +716,77 @@ void PatchBrowser::buttonClicked(Button *b)
 	else if (b == addButton)
 	{
 		toggleShowChains();
+	}
+	else if (b == profileButton)
+	{
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+		auto shouldProfile = b->getToggleState();
+
+		auto chain = rootWindow.getComponent()->getBackendProcessor()->getMainSynthChain();
+		auto& session = chain->getMainController()->getDebugSession();
+		
+		chain->setEnableProfiling(shouldProfile, &session, 0);
+
+		if(shouldProfile)
+		{
+			Component::SafePointer<HiseShapeButton> b(profileButton.get());
+			auto delay = (int)session.getOptions().millisecondsToRecord;
+			Timer::callAfterDelay(delay, [b]()
+			{
+				if(b.getComponent() != nullptr && b->getToggleState())
+					b->setToggleState(false, sendNotificationSync);
+			});
+
+			session.clearData(&session);
+
+			session.heatmapManager.heatmapBroadcaster.addListener(*this, [](PatchBrowser& pb, DebugInformationBase::Ptr p, const std::map<int, double>* map)
+			{
+				if(map != nullptr)
+				{
+					Array<NodeComponent*> list;
+
+					callRecursive<PatchItem>(&pb, [&](PatchItem* i)
+					{
+						if(auto t = dynamic_cast<ProfiledProcessor*>(i->getProcessor()))
+						{
+							auto idx = t->getHeatmapIndex();
+
+							if(map->find(idx) != map->end())
+							{
+								i->heatmapAlpha = (float)map->at(idx);
+								FloatSanitizers::sanitizeFloatNumber(i->heatmapAlpha);
+								i->heatmapAlpha = jlimit(0.0f, 1.0f, i->heatmapAlpha);
+								i->repaint();
+							}
+						}
+
+						return false;
+					});
+				}
+			});
+		}
+		else
+		{
+			session.heatmapManager.heatmapBroadcaster.removeListener(*this);
+
+			callRecursive<PatchItem>(this, [&](PatchItem* i)
+			{
+				if(auto t = dynamic_cast<ProfiledProcessor*>(i->getProcessor()))
+				{
+					i->heatmapAlpha = 0.0f;
+					i->repaint();
+				}
+
+				return false;
+			});
+
+			if(auto r = chain->getMainController()->getDebugSession().getLastProfileRoot(DebugSession::ThreadIdentifier::Type::AudioThread))
+			{
+				auto c = chain->getMainController()->getDebugSession().createPopupViewer(r);
+				rootWindow->getRootFloatingTile()->showComponentInRootPopup(c, profileButton, { profileButton->getWidth() / 2, profileButton->getHeight() } );
+			}
+		}
+#endif
 	}
 }
 
@@ -1189,9 +1252,11 @@ void PatchBrowser::ModuleDragTarget::drawDragStatus(Graphics &g, Rectangle<float
 
 // ====================================================================================================================
 
-PatchBrowser::PatchCollection::PatchCollection(ModulatorSynth *synth, int hierarchy_, bool showChains) :
-ModuleDragTarget(synth),
-hierarchy(hierarchy_)
+PatchBrowser::PatchCollection::PatchCollection(int index, ModulatorSynth *synth, int hierarchy_, bool showChains) :
+  Collection(index),
+  ModuleDragTarget(synth),
+  hierarchy(hierarchy_),
+  id(synth->getId())
 {
 	addAndMakeVisible(peak);
 	addAndMakeVisible(idLabel);
@@ -1199,7 +1264,7 @@ hierarchy(hierarchy_)
 
 	foldButton->setVisible(true);
 
-    setTooltip("Show " + synth->getId() + " editor");
+    setTooltip(synth->getId() + ", Type: " + synth->getType().toString());
     
 	idLabel.setFont(GLOBAL_BOLD_FONT().withHeight(JUCE_LIVE_CONSTANT_OFF(16.0f)));
 
@@ -1392,27 +1457,7 @@ void PatchBrowser::PatchCollection::paint(Graphics &g)
 
 	idLabel.setColour(Label::ColourIds::textColourId, Colours::white.withAlpha(bypassed ? 0.2f : 0.8f));
     
-    if(auto ms = dynamic_cast<ModulatorSynthChain*>(getProcessor()))
-    {
-        if(ms->isUniformVoiceHandlerRoot())
-        {
-            
-            g.setFont(GLOBAL_BOLD_FONT().withHeight(10.0f));
-            
-            
-            
-            auto b = iconSpace2.removeFromRight(30.0f);
-            
-            g.setColour(JUCE_LIVE_CONSTANT_OFF(Colour(0x14FFFFFF)));
-            g.fillRoundedRectangle(b.reduced(3.0f), 2.0f);
-            
-            g.setColour(Colour(0xFF888888));
-            g.drawText("UVH", b, Justification::centred);
-        }
-        
-    }
-
-	auto ds = getDragState();
+    auto ds = getDragState();
 
 	if(ds != DragState::Inactive)
 	{
@@ -1548,7 +1593,7 @@ lastId(String()),
 hierarchy(hierarchy_),
 lastMouseDown(0)
 {
-    setTooltip("Show " + p->getId() + " editor");
+    setTooltip(p->getId() + ", Type: " + p->getType());
     
 	addAndMakeVisible(closeButton);
 	addAndMakeVisible(createButton);
@@ -1830,6 +1875,12 @@ void PatchBrowser::PatchItem::paint(Graphics& g)
 		g.drawRoundedRectangle(b.reduced(1.0f), 2.0f, 1.0f);
 	}
 
+	if(heatmapAlpha != 0.0f)
+	{
+		g.setColour(Colour(HISE_WARNING_COLOUR).withAlpha(heatmapAlpha));
+		g.fillRoundedRectangle(b.reduced(1.0f), 2.0f);
+	}
+
 	g.setColour(pColour.withAlpha(!bypassed ? 1.0f : 0.5f));
 
 	auto iconSpace = b.removeFromLeft(b.getHeight()).reduced(2.0f);
@@ -1849,9 +1900,53 @@ void PatchBrowser::PatchItem::paint(Graphics& g)
 
 	g.setColour(Colour(0xFF222222));
 
+	if(auto rv = dynamic_cast<snex::Types::VoiceResetter*>(p.get()))
+	{
+		if(!rv->isVoiceResetActive())
+			g.setColour(Colour(0x44222222));
+
+		g.setFont(GLOBAL_BOLD_FONT());
+		g.drawText("!", iconSpace.translated(0.0f, -1.0f), Justification::centred);
+		g.drawEllipse(iconSpace.reduced(JUCE_LIVE_CONSTANT_OFF(3.0f)), 1.5f);
+
+		g.setColour(Colour(0xFF222222));
+	}
+
+	if(auto fx = dynamic_cast<MasterEffectProcessor*>(p.get()))
+	{
+		if(auto fxChain = dynamic_cast<EffectProcessorChain*>(fx->getParentProcessor(false, false)))
+		{
+			auto idx = fxChain->getProcessingOrderIndex(fx);
+
+			if(idx.first)
+			{
+				g.setColour(Colour(0xFF222222));
+				g.setFont(GLOBAL_BOLD_FONT());
+				g.drawText(String(idx.second+1), iconSpace.translated(0.0f, -1.0f), Justification::centred);
+			}
+		}
+	}
+
+	if(auto fx = dynamic_cast<VoiceEffectProcessor*>(p.get()))
+	{
+		if(auto fxChain = dynamic_cast<EffectProcessorChain*>(fx->getParentProcessor(false, false)))
+		{
+			auto idx = fxChain->getProcessingOrderIndex(fx);
+
+			if(idx.first)
+			{
+				g.setColour(Colour(0xFF222222));
+				g.setFont(GLOBAL_BOLD_FONT());
+				g.drawText(String(idx.second+1), iconSpace.translated(0.0f, -1.0f), Justification::centred);
+			}
+		}
+	}
+
 	g.drawRoundedRectangle(iconSpace, 2.0f, 2.0f);
 
 	g.setColour(ProcessorHelpers::is<Chain>(p.get()) ? Colours::black.withAlpha(0.6f) : Colours::black);
+
+	
 
 	auto ds = getDragState();
 
@@ -2155,20 +2250,36 @@ PatchBrowser::MiniPeak::~MiniPeak()
 
 void PatchBrowser::MiniPeak::mouseDown(const MouseEvent& e)
 {
+	auto root = GET_BACKEND_ROOT_WINDOW(this)->getRootFloatingTile();
+
+	
+
 	if (type == ProcessorType::Audio)
 	{
 		if(auto rp = dynamic_cast<RoutableProcessor*>(p.get()))
-			rp->editRouting(this);
+		{
+			if(root->setTogglePopupFlag(*this, clicked))
+			{
+				rp->editRouting(this);
+			}
+		}
+			
 	}
     if(type == ProcessorType::Midi)
     {
-        auto pl = dynamic_cast<MidiProcessor*>(p.get())->createEventLogComponent();
-        GET_BACKEND_ROOT_WINDOW(this)->getRootFloatingTile()->showComponentInRootPopup(pl, getParentComponent(), { 100, 35 }, false);
+		if(root->setTogglePopupFlag(*this, clicked))
+		{
+			auto pl = dynamic_cast<MidiProcessor*>(p.get())->createEventLogComponent();
+			root->showComponentInRootPopup(pl, getParentComponent(), { 100, 35 }, false);
+		}
     }
 	if (type == ProcessorType::Mod)
 	{
-		auto pl = new PlotterPopup(p);
-		GET_BACKEND_ROOT_WINDOW(this)->getRootFloatingTile()->showComponentInRootPopup(pl, getParentComponent(), { 100, 35 }, false);
+		if(root->setTogglePopupFlag(*this, clicked))
+		{
+			auto pl = new PlotterPopup(p);
+			root->showComponentInRootPopup(pl, getParentComponent(), { 100, 35 }, false);
+		}
 	}
 }
 
@@ -2422,11 +2533,12 @@ juce::Path PatchBrowser::Factory::createPath(const String& url) const
 {
 	Path p;
 	LOAD_EPATH_IF_URL("add", EditorIcons::penShape);
-	LOAD_PATH_IF_URL("workspace", ColumnIcons::openWorkspaceIcon);
+	LOAD_EPATH_IF_URL("workspace", ColumnIcons::openWorkspaceIcon);
 	LOAD_EPATH_IF_URL("close", SampleMapIcons::deleteSamples);
 	LOAD_EPATH_IF_URL("create", HiBinaryData::ProcessorEditorHeaderIcons::addIcon);
 	LOAD_EPATH_IF_URL("folded", HiBinaryData::ProcessorEditorHeaderIcons::foldedIcon);
 	LOAD_EPATH_IF_URL("unfolded", HiBinaryData::ProcessorEditorHeaderIcons::foldedIcon);
+	LOAD_EPATH_IF_URL("profile", EditorIcons::profileIcon);
 
 	if (url == "unfolded")
 		p.applyTransform(AffineTransform::rotation(float_Pi * 0.5f));
@@ -2531,7 +2643,7 @@ void AutomationDataBrowser::AutomationCollection::paint(Graphics& g)
 AutomationDataBrowser::AutomationCollection::AutomationCollection(MainController* mc, AutomationData::Ptr data_, int index_) :
 	ControlledObject(mc),
 	SimpleTimer(mc->getGlobalUIUpdater()),
-	Collection(),
+	Collection(1),
 	data(data_),
 	NEW_AUTOMATION_WITH_COMMA(listener(mc->getRootDispatcher(), *this, [this](int, double){ this->repaint();}))
 	index(index_)

@@ -259,7 +259,9 @@ void ModulatorSynthGroupVoice::calculateBlock(int startSample, int numSamples)
 		calculateNoFMBlock(startSample, numSamples);
 	}
 
+#if HISE_USE_WRONG_VOICE_RENDERING_ORDER
 	getOwnerSynth()->effectChain->renderVoice(voiceIndex, voiceBuffer, startSample, numSamples);
+#endif
 
 	if (auto modValues = getOwnerSynth()->getVoiceGainValues())
 	{
@@ -273,6 +275,10 @@ void ModulatorSynthGroupVoice::calculateBlock(int startSample, int numSamples)
 		FloatVectorOperations::multiply(voiceBuffer.getWritePointer(0, startSample), constantGain, numSamples);
 		FloatVectorOperations::multiply(voiceBuffer.getWritePointer(1, startSample), constantGain, numSamples);
 	}
+
+#if !HISE_USE_WRONG_VOICE_RENDERING_ORDER
+	getOwnerSynth()->effectChain->renderVoice(voiceIndex, voiceBuffer, startSample, numSamples);
+#endif
 };
 
 
@@ -1051,6 +1057,16 @@ float ModulatorSynthGroup::getDefaultValue(int parameterIndex) const
 	case ForceMono:		 return 0.0f;
 	case KillSecondVoices:	return 0.0f;
 	default:			 jassertfalse; return -1.0f;
+	}
+}
+
+ModulationDisplayValue::QueryFunction::Ptr ModulatorSynthGroup::getModulationQueryFunction(int parameterIndex) const
+{
+	switch(parameterIndex)
+	{
+	case UnisonoDetune: return new ModulatorChain::GetModulationOutput<(int)InternalChains::DetuneModulation>();
+	case UnisonoSpread: return new ModulatorChain::GetModulationOutput<(int)InternalChains::SpreadModulation>();
+	default:            return ModulatorSynth::getModulationQueryFunction(parameterIndex);
 	}
 }
 

@@ -210,16 +210,43 @@ struct ParameterSlider : public Slider,
 
 	Array<NodeContainer::MacroParameter*> getConnectedMacroParameters();
 
+	void setExternalModulationIndex(int externalModulationIndex_)
+	{
+		externalModulationIndex = externalModulationIndex_;
+
+		if(externalModulationIndex != -1)
+		{
+			auto p = dynamic_cast<Processor*>(node->getScriptProcessor());
+			auto pIndex = pTree.getParent().indexOf(pTree);
+			modulationQueryFunction = p->getModulationQueryFunction(pIndex);
+			modulationQueryProcessor = p;
+			
+		}
+		else
+		{
+			modulationQueryFunction = nullptr;
+			modulationQueryProcessor = nullptr;
+		}
+
+		checkEnabledState();
+	}
+
+	ModulationDisplayValue::QueryFunction::Ptr modulationQueryFunction;
+	WeakReference<Processor> modulationQueryProcessor;
+	ModulationDisplayValue lastValue;
+
 	valuetree::RecursiveTypedChildListener connectionListener;
 	
 	valuetree::PropertyListener valueListener;
+	valuetree::PropertyListener defaultValueListener;
 	valuetree::PropertyListener rangeListener;
 	valuetree::PropertyListener automationListener;
+	valuetree::PropertyListener textConverterWatcher;
 
 	/** Returns either the Connection or the ModulationTarget, or SwitchTarget tree if it's connected. */
 	ValueTree getConnectionSourceTree();
 
-	bool matchesConnection(ValueTree& c) const;
+	bool matchesConnection(const ValueTree& c) const;
 
 	void mouseDown(const MouseEvent& e) override;
 
@@ -249,18 +276,17 @@ struct ParameterSlider : public Slider,
 
 	double getValueToDisplay() const;
 
-	bool isControllingFrozenNode() const;
-
 	void repaintParentGraph();
-
-
 
 	int macroHoverIndex = -1;
 	double lastModValue = 0.0f;
 	bool modulationActive = false;
 	bool isReadOnlyModulated = false;
 
+	
+
 	WeakReference<NodeBase::Parameter> parameterToControl;
+	ValueToTextConverter vtc;
 	ValueTree pTree;
 	ParameterKnobLookAndFeel laf;
 	NodeBase::Ptr node;
@@ -274,27 +300,75 @@ struct ParameterSlider : public Slider,
     
     float blinkAlpha = 0.0f;
 
+	int externalModulationIndex = -1;
 };
 
 
 struct MacroParameterSlider : public Component,
                               public PathFactory
 {
+	struct Dragger: public Component,
+				    public SettableTooltipClient
+	{
+		Dragger(MacroParameterSlider& p_):
+		  parent(p_),
+		  targetIcon(parent.createPath("drag"))
+		{
+			setTooltip("Drag to control other sliders");
+			setRepaintsOnMouseActivity(true);
+			setMouseCursor(ModulationSourceBaseComponent::createMouseCursor());
+		};
+
+		void paint(Graphics& g) override
+		{
+			auto c = isMouseButtonDown() ? Colour(SIGNAL_COLOUR) : Colours::white;
+
+			float alpha = 0.3f;
+
+			if(isMouseOverOrDragging())
+				alpha += 0.2f;
+
+			if(isMouseButtonDown())
+				alpha += 0.5f;
+			
+			g.setColour(c.withAlpha(alpha));
+			g.fillPath(targetIcon);
+		}
+
+		void resized() override
+		{
+			auto b = getLocalBounds().toFloat();
+			b = b.removeFromTop(16.0f);
+			b = b.withSizeKeepingCentre(b.getHeight(), b.getHeight());
+			parent.scalePath(targetIcon, b);
+		}
+		void mouseDown(const MouseEvent& e) override
+		{
+			
+		}
+
+		Component* getCircleComponent() { return static_cast<Component*>(&parent.slider); }
+
+		void mouseUp(const MouseEvent& e) override;
+
+		void mouseDrag(const MouseEvent& e) override;
+
+		MacroParameterSlider& parent;
+		Path targetIcon;
+		
+	};
+
     MacroParameterSlider(NodeBase* node, int index);
 
     Path createPath(const String& url) const override;
     
 	void resized() override;
 
-    void mouseDown(const MouseEvent& event) override
-    {
-		CHECK_MIDDLE_MOUSE_DOWN(event);
-	    Component::mouseDown(event);
-    }
+    void mouseDown(const MouseEvent& event) override;
 
     void mouseDrag(const MouseEvent& event) override;
 
-	void mouseUp(const MouseEvent& e) override;
+    void mouseUp(const MouseEvent& e) override;
 
 	void mouseEnter(const MouseEvent& e) override;
 	void mouseExit(const MouseEvent& e) override;
@@ -312,11 +386,18 @@ struct MacroParameterSlider : public Component,
 	void focusLost(FocusChangeType) override { repaint(); }
 
 	bool editEnabled = false;
+	bool dragging = false;
+
+	Component* getDragComponent() { return &dragger; }
 
 private:
 
-    void checkAllParametersForWarning(const Identifier&, const var&);
-    
+	
+
+	void checkAllParametersForWarning(const Identifier&, const var&);
+
+	void updateExternalModulation(const ValueTree& v, const Identifier& id);
+
     void updateWarningButton(const ValueTree& v, const Identifier& id);
     
     void updateWarningOnConnectionChange(const ValueTree& c, bool wasAdded);
@@ -324,10 +405,160 @@ private:
 	ParameterSlider slider;
     
     HiseShapeButton warningButton;
-    
+	HiseShapeButton deleteButton;
+
+	Dragger dragger;
+
     valuetree::RecursivePropertyListener rangeWatcher;
     valuetree::PropertyListener sourceRangeWatcher;
+	
     valuetree::ChildListener sourceConnectionWatcher;
+
+	valuetree::RecursivePropertyListener externalModulationWatcher;
+
+	struct ExternalModulationSticker: public PathFactory
+	{
+		ExternalModulationSticker(DspNetwork* n, int parameterIndex_, Component* c):
+		  parentComponent(c),
+		  network(n),
+		  parameterIndex(parameterIndex_)
+		{
+			auto root = n->getValueTree();
+			auto ptree = n->getRootNode()->getParameterTree().getChild(parameterIndex);
+
+			auto ctree = ptree.getChildWithName(PropertyIds::Connections);
+
+			modeListener.setCallback(ptree, 
+				{ PropertyIds::ExternalModulation },
+				valuetree::AsyncMode::Asynchronously,
+				[this](const Identifier&, const var&)
+			{
+				update();
+			});
+
+			connectionListener.setCallback(ctree, valuetree::AsyncMode::Asynchronously,
+				[this](const ValueTree&, bool)
+			{
+				update();
+			});
+		}
+
+		Path createPath(const String& url) const override
+		{
+			Path p;
+
+			LOAD_EPATH_IF_URL("Combined", HiBinaryData::ProcessorEditorHeaderIcons::bipolarIcon);
+			LOAD_EPATH_IF_URL("Gain", ProcessorIcons::gainIcon);
+			LOAD_EPATH_IF_URL("Offset", HiBinaryData::ProcessorEditorHeaderIcons::bipolarIcon);
+			LOAD_EPATH_IF_URL("Pan", ProcessorIcons::stereoIcon);
+			LOAD_EPATH_IF_URL("warning", EditorIcons::warningIcon);
+
+			return p;
+		}
+
+		void updateIfActive()
+		{
+			if(externalModulationMode != modulation::ParameterMode::Disabled)
+				update();
+		}
+
+		int update()
+		{
+			auto rootTree = network->getValueTree();
+			auto pp = network->getParameterProperties();
+
+			jassert(rootTree.getType() == PropertyIds::Network);
+
+			externalModulationIndex = pp.getModulationChainIndex(parameterIndex);
+			externalModulationMode = pp.getParameterMode(parameterIndex);
+			icon = createPath(pp.getModulationModeNames()[(int)externalModulationMode]);
+
+			c = Colours::white.withAlpha(0.4f);
+
+			auto extraModFound = valuetree::Helpers::forEach(rootTree, [&](const ValueTree& v)
+			{
+				if(v[PropertyIds::FactoryPath].toString() == "core.extra_mod")
+				{
+					auto i = v.getChildWithName(PropertyIds::Parameters).getChildWithProperty(PropertyIds::ID, "Index");
+
+					if(externalModulationIndex == (int)i[PropertyIds::Value])
+					{
+						auto nc = PropertyHelpers::getColourFromVar(v[PropertyIds::NodeColour]);
+
+						if(!nc.isTransparent())
+							c = nc;
+
+						return true;
+					}
+				}
+
+				return false;
+			});
+
+			auto isConnected = pp.isConnected(externalModulationIndex);
+
+			if(!extraModFound && isConnected)
+			{
+				auto ptree = rootTree.getChildWithName(PropertyIds::Node).getChildWithName(PropertyIds::Parameters).getChild(parameterIndex);
+				auto firstConnection = ptree.getChildWithName(PropertyIds::Connections).getChild(0);
+
+				jassert(firstConnection.isValid());
+				auto targetNodeId = firstConnection[PropertyIds::NodeId].toString();
+
+				valuetree::Helpers::forEach(rootTree, [&](const ValueTree& v)
+				{
+					if(v.getType() == PropertyIds::Node && v[PropertyIds::ID].toString() == targetNodeId)
+					{
+						auto nc = PropertyHelpers::getColourFromVar(v[PropertyIds::NodeColour]);
+
+						if(!nc.isTransparent())
+							c = nc;
+
+						return true;
+					}
+					
+					return false;
+				});
+			}
+
+			auto ok = extraModFound == !isConnected;
+
+			if(!ok)
+			{
+				icon = createPath("warning");
+				c = Colour(HISE_ERROR_COLOUR);
+			}
+
+			parentComponent->repaint();
+
+			return externalModulationIndex;
+		}
+
+		void draw(Graphics& g, Rectangle<float> lb)
+		{
+			if(externalModulationMode != modulation::ParameterMode::Disabled)
+			{
+				PathFactory::scalePath(icon, lb.removeFromLeft(10));
+				g.setColour(c);
+				g.fillPath(icon);
+				g.setFont(GLOBAL_BOLD_FONT());
+				g.drawText(String(externalModulationIndex+1), lb.removeFromLeft(20), Justification::left);
+			}
+		}
+
+	private:
+
+		Component* parentComponent;
+		int parameterIndex = -1;
+		WeakReference<DspNetwork> network;
+		valuetree::ChildListener connectionListener;
+		valuetree::PropertyListener modeListener;
+
+		Path icon;
+		Colour c;
+		modulation::ParameterMode externalModulationMode = modulation::ParameterMode::Disabled;
+		int externalModulationIndex = -1;
+	} sticker;
 };
 
 }

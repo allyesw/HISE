@@ -56,35 +56,7 @@ TableEnvelope::TableEnvelope(MainController *mc, const String &id, int voiceAmou
 
 	monophonicState = createSubclassedState(-1);
 
-	WeakReference<Processor> t = this;
-
-	auto attackConverter = [t](float input)
-	{
-		if (t != nullptr)
-		{
-			auto time = t->getAttribute(TableEnvelope::SpecialParameters::Attack);
-			return String(roundToInt(input * time)) + " ms";
-		}
-
-		return String();
-	};
-
-	auto releaseConverter = [t](float input)
-	{
-		if (t != nullptr)
-		{
-			auto time = t->getAttribute(TableEnvelope::SpecialParameters::Release);
-			return String(roundToInt(input * time)) + " ms";
-		}
-
-		return String();
-	};
-
-	attackChain->setTableValueConverter(attackConverter);
-	releaseChain->setTableValueConverter(releaseConverter);
-
-	attackTable->setXTextConverter(attackConverter);
-	releaseTable->setXTextConverter(releaseConverter);
+	updateTables();
 
 	attackChain->setIsVoiceStartChain(true);
 	releaseChain->setIsVoiceStartChain(true);
@@ -295,6 +267,39 @@ void TableEnvelope::handleHiseEvent(const HiseEvent& m)
 		releaseChain->handleHiseEvent(m);
 };
 
+void TableEnvelope::updateTables()
+{
+	WeakReference<Processor> t = this;
+
+	auto attackConverter = [t](float input)
+	{
+		if (t != nullptr)
+		{
+			auto time = t->getAttribute(TableEnvelope::SpecialParameters::Attack);
+			return String(roundToInt(input * time)) + " ms";
+		}
+
+		return String();
+	};
+
+	auto releaseConverter = [t](float input)
+	{
+		if (t != nullptr)
+		{
+			auto time = t->getAttribute(TableEnvelope::SpecialParameters::Release);
+			return String(roundToInt(input * time)) + " ms";
+		}
+
+		return String();
+	};
+
+	attackChain->setTableValueConverter(attackConverter);
+	releaseChain->setTableValueConverter(releaseConverter);
+
+	attackTable->setXTextConverter(attackConverter);
+	releaseTable->setXTextConverter(releaseConverter);
+}
+
 float TableEnvelope::calculateNewValue(int voiceIndex)
 {
 	jassert(voiceIndex < states.size());
@@ -405,6 +410,59 @@ bool TableEnvelope::isPlaying(int voiceIndex) const
 		TableEnvelopeState *state = static_cast<TableEnvelopeState*>(states[voiceIndex]);
 		return state->current_state != TableEnvelopeState::IDLE;
 	}
+}
+
+void TableEnvelope::setInternalAttribute(int parameterIndex, float newValue)
+{
+	if (parameterIndex < EnvelopeModulator::Parameters::numParameters)
+	{
+		EnvelopeModulator::setInternalAttribute(parameterIndex, newValue);
+		return;
+	}
+
+	switch(parameterIndex)
+	{
+	case Attack:
+		attack = newValue;
+		attackUptimeDelta = calculateTableDelta(newValue);
+		break;
+	case Release:
+		release = newValue;
+		releaseUptimeDelta = calculateTableDelta(newValue);
+		break;
+	default:
+		jassertfalse;
+	}	
+}
+
+float TableEnvelope::getDefaultValue(int parameterIndex) const
+{
+	if (parameterIndex < EnvelopeModulator::Parameters::numParameters)
+	{
+		return EnvelopeModulator::getDefaultValue(parameterIndex);
+	}
+
+	switch (parameterIndex)
+	{
+	case Attack:
+		return 20.0f;
+	case Release:
+		return 20.0f;
+	default:
+		jassertfalse;
+		return -1;
+	}
+}
+
+ModulationDisplayValue::QueryFunction::Ptr TableEnvelope::getModulationQueryFunction(int parameterIndex) const
+{
+	switch(parameterIndex)
+	{
+	case Attack:  return new ModulatorChain::GetModulationOutput<(int)TableEnvelope::InternalChains::AttackChain>();
+	case Release: return new ModulatorChain::GetModulationOutput<(int)TableEnvelope::InternalChains::ReleaseChain>();
+	}
+
+	return EnvelopeModulator::getModulationQueryFunction(parameterIndex);
 }
 
 ProcessorEditorBody *TableEnvelope::createEditor(ProcessorEditor *parentEditor)

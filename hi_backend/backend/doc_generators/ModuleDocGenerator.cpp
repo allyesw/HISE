@@ -311,6 +311,8 @@ juce::String HiseModuleDatabase::Resolver::getContent(const MarkdownLink& url)
 			interfaces.add("TableProcessor");
 		if (dynamic_cast<RoutableProcessor*>(p) != nullptr)
 			interfaces.add("RoutingMatrix");
+		if(dynamic_cast<snex::Types::VoiceResetter*>(p) != nullptr)
+			interfaces.add("VoiceResetter");
 		
 		if (interfaces.size() > 0)
 		{
@@ -322,7 +324,16 @@ juce::String HiseModuleDatabase::Resolver::getContent(const MarkdownLink& url)
 			{
 				//s << iLink.getChildUrl(i).toString(MarkdownLink::FormattedLinkMarkdown);
 
-				s << "[`" << i << "`](/scripting/scripting-api/" << MarkdownLink::Helpers::getSanitizedFilename(i) << ") ";
+				if(i == "VoiceResetter")
+				{
+					s << "[`" << i << "`](/scriptnode/manual/glossary#voiceresetter)";
+				}
+				else
+				{
+					s << "[`" << i << "`](/scripting/scripting-api/" << MarkdownLink::Helpers::getSanitizedFilename(i) << ") ";
+				}
+
+				
 			}
 
 			s << " \n";
@@ -379,6 +390,24 @@ juce::String HiseModuleDatabase::Resolver::getContent(const MarkdownLink& url)
 			}
 		}
 
+		String pdump;
+
+		pdump << "\n### " << p->getType().toString() + " Parameter API";
+
+		pdump << "\n\n```javascript\n";
+
+		for(int i = 0; i < doc->parameters.size(); i++)
+		{
+			auto id = p->getType().toString();
+			
+			pdump << "/* " << doc->parameters[i].helpText << ". */\n";
+			pdump << id << ".setAttribute(" << id << "." << doc->parameters[i].id << ", value);\n\n";
+		}
+
+		pdump << "```\n";
+
+		parameterDump << pdump;
+
 		s << doc->createHelpText();
 
 		return s;
@@ -420,13 +449,35 @@ HiseModuleDatabase::ScreenshotProvider::~ScreenshotProvider()
 	
 }
 
-juce::Image HiseModuleDatabase::ScreenshotProvider::getImage(const MarkdownLink& url, float )
+juce::Image HiseModuleDatabase::ScreenshotProvider::getImage(const MarkdownLink& url, float width)
 {
 	auto urlString = url.toString(MarkdownLink::UrlFull);
 
 	if (urlString.contains("module_screenshot_"))
 	{
 		auto pId = urlString.fromFirstOccurrenceOf("module_screenshot_", false, false).upToFirstOccurrenceOf(".png", false, false);
+
+
+		auto rootDir = parent->getHolder()->getDatabaseRootDirectory();
+
+		if(rootDir.isDirectory())
+		{
+ 			auto snDir = rootDir.getChildFile("images/override/modules/");
+
+			if(snDir.isDirectory())
+			{
+				auto of = snDir.getChildFile(pId).withFileExtension(".png");
+
+				if(of.existsAsFile())
+				{
+					auto img = ImageFileFormat::loadFrom(of);
+
+					updateWidthFromURL(url, width);
+					return resizeImageToFit(img, width);
+				}
+			}
+		}
+
 
 		MarkdownLink imageURL(url.getRoot(), pId);
 		imageURL.setType(MarkdownLink::Type::Image);
@@ -614,18 +665,20 @@ juce::String Resolver::getContent(const MarkdownLink& url)
 			auto header = url.getHeaderFromFile(root);
 
 			auto parameterDescriptions = header.getKeyList("parameters");
-			
+			auto propertyDescriptions = header.getKeyList("properties");
 
 			data->network->clear(true, true);
 
 			auto factory = url.getParentUrl().toString(MarkdownLink::Format::UrlSubPath);
 			NodeBase::Ptr node = dynamic_cast<NodeBase*>(data->network->create(factory + "." + nodeId, nodeId).getObject());
 
-
+			
 
 			if (node != nullptr)
 			{
 				auto tree = node->getValueTree();
+
+
 
 				String content;
 				String nl = "\n";
@@ -637,7 +690,24 @@ juce::String Resolver::getContent(const MarkdownLink& url)
 				if(!inlineDocMode)
 					content << "> `" << factory << "`" << nl;
 
+				auto cTree = tree.getChildWithName(PropertyIds::ComplexData);
+
+				snex::ExternalData::forEachType([&](ExternalData::DataType dt)
+				{
+					auto did = Identifier(ExternalData::getDataTypeName(dt, true));
+
+					auto dtree = cTree.getChildWithName(did);
+					auto numChildren = dtree.getNumChildren();
+
+					if(numChildren > 0)
+					{
+						content << "`" << ExternalData::getDataTypeName(dt, false) << "` slots: **" + String(numChildren) << "**" << nl;
+					}
+				});
+
 				content << "![screen](/images/sn_screen_" << factory.upToFirstOccurrenceOf(".", false, false) << "__" << nodeId << ".png)";
+
+				
 
 				content << header.getKeyValue("summary") << nl;
 
@@ -682,6 +752,60 @@ juce::String Resolver::getContent(const MarkdownLink& url)
 
 					content << nl;
 				}
+
+				auto propTree = node->getPropertyTree();
+
+				if(propTree.getNumChildren() > 0)
+				{
+					if(inlineDocMode)
+						content << "### Properties" << nl;
+					else
+						content << "## Properties" << nl;
+
+					content << "| ID | Type | Default | Description |" << nl;
+					content << "| --- | --- | --- | ------ |" << nl;
+
+					for(auto p: propTree)
+					{
+						auto pId = p[PropertyIds::ID].toString();
+						auto dv = p[PropertyIds::Value];
+
+						String typeName;
+
+						if(dv.isBool())
+							typeName = "bool";
+						else if(dv.isInt() || dv.isInt64() || dv.isDouble() || juce::CharacterFunctions::isDigit(dv.toString()[0]))
+							typeName = "int";
+						else
+							typeName = "String";
+
+						content << "| " << pId;
+						content << " | " << typeName;
+						content << " | " << (dv.isBool() ? String((bool)dv ? "true" : "false") : dv.toString());
+
+						bool found = false;
+
+						for (auto d : propertyDescriptions)
+						{
+							if (d.trim().startsWith(pId))
+							{
+								auto desc = d.fromFirstOccurrenceOf(":", false, false).trim();
+								content << " | " << desc << " |" << nl;
+								found = true;
+								break;
+							}
+						}
+
+						if (!found)
+							content << " | " << "no description." << " |" << nl;
+
+						
+					}
+
+					content << nl;
+				}
+
+
 
 				content << url.toString(MarkdownLink::Format::ContentWithoutHeader);
 

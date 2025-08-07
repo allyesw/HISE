@@ -36,13 +36,13 @@
 namespace hise { using namespace juce;
 
 class ScriptedControlAudioParameter : public AudioProcessorParameterWithID,
-									  public AsyncUpdater
+									  public HisePluginParameterBase
 {
 public:
 
 	// ================================================================================================================
 
-	enum class Type
+	enum class ControlType
 	{
 		Slider = 0,
 		Button,
@@ -53,15 +53,35 @@ public:
 
 	ScriptedControlAudioParameter(ScriptingApi::Content::ScriptComponent *newComponent, 
 								  AudioProcessor *parentProcessor, 
-								  ScriptBaseMidiProcessor *scriptProcessor, 
-								  int index);
+								  ScriptBaseMidiProcessor *scriptProcessor, int pIndex,
+								  int attributeIndex);
+
+	void cleanup() override
+	{
+		if(scriptProcessor != nullptr)
+		{
+			scriptProcessor->removeAttributeListener(&attributeListener);
+		}
+
+		HisePluginParameterBase::cleanup();
+	}
 
 	void setControlledScriptComponent(ScriptingApi::Content::ScriptComponent *newComponent);
 
+#if 0
 	void handleAsyncUpdate() override
 	{
 		setParameterNotifyingHostInternal(indexForHost, valueForHost);
 	}
+#endif
+
+	HisePluginParameterBase::Type getType() const override { return HisePluginParameterBase::Type::ScriptControl; }
+	NormalisableRange<float> getNormalisableRange() const override { return range; }
+	int getSlotIndex() const override { return attributeIndex; }
+	ValueToTextConverter getValueToTextConverter() const override { return vtc; }
+	String getHisePluginParameterName() const override { return getName(10000); }
+	float getHisePluginParameterNormalisedValue() const override { return getValue(); }
+	String getHisePluginParameterGroupName() const override { return groupName; }
 
 	// ================================================================================================================
 
@@ -75,13 +95,13 @@ public:
 	float getValueForText(const String &text) const override;
 	int getNumSteps() const override;
 
-	void setParameterNotifyingHost(int index, float newValue);
+	//void setParameterNotifyingHost(int index, float newValue);
 	bool isAutomatable() const override { return true; };
 
     
     bool isMetaParameter() const override;
     
-	static Type getType(ScriptingApi::Content::ScriptComponent *component);
+	static ControlType getControlType(ScriptingApi::Content::ScriptComponent *component);
 
 	static String getNameForComponent(ScriptingApi::Content::ScriptComponent *component)
 	{
@@ -93,30 +113,45 @@ public:
 
 	Identifier getId() const { return id; }
 
-	void deactivateUpdateForNextSetValue() { deactivated = true; }
+	void onParameterUpdate(dispatch::library::Processor*, uint16 )
+	{
+		if(scriptProcessor != nullptr)
+		{
+			auto v = scriptProcessor->getAttribute(attributeIndex);
+			onUpdate(-1, v);
+		}
+	}
 
 private:
 
-	void setParameterNotifyingHostInternal(int index, float newValue);
+	//void setParameterNotifyingHostInternal(int index, float newValue);
+
+	dispatch::library::Processor::AttributeListener attributeListener;
 
 	float valueForHost = 0.0f;
 	int indexForHost = -1;
 
 	// ================================================================================================================
 
+	ValueToTextConverter vtc;
+
 	bool deactivated;
 	const Identifier id;
 	NormalisableRange<float> range;
-	Type type;
+	ControlType type;
 	AudioProcessor *parentProcessor;
 	WeakReference<Processor> scriptProcessor;
-	int componentIndex;
 	String suffix;
 	StringArray itemList;
     bool isMeta = false;
-    
+
+	// the index of the attribute for this component
+	int attributeIndex = -1;
+
 	float lastValue = -1.0f;
 	bool lastValueInitialised = false;
+	String groupName;
+	
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScriptedControlAudioParameter);
 
@@ -243,12 +278,12 @@ public:
 
 		ValuePopup(ScriptCreatedComponentWrapper& p):
 			parent(p),
-			shadow({ Colours::black.withAlpha(0.4f), 5,{ 0, 0 } })
+			shadow(new DropShadower({Colours::black.withAlpha(0.4f), 5,{ 0, 0 }}))
 		{
 			f = GLOBAL_BOLD_FONT();
 
-			shadow.setOwner(this);
-
+			shadow->setOwner(this);
+			
 			updateText();
 			startTimer(30);
 		}
@@ -279,7 +314,7 @@ public:
 
 		ScriptCreatedComponentWrapper& parent;
 
-		DropShadower shadow;
+		ScopedPointer<DropShadower> shadow;
 	};
 
 	struct AdditionalMouseCallback;
@@ -306,6 +341,12 @@ public:
 
 	const Component *getComponent() const { return component; }
 
+	void clearQueue() override
+	{
+		auto sp = getScriptComponent()->profile(getScriptComponent()->pOnProperty);
+		AsyncValueTreePropertyListener::clearQueue();
+	}
+
 	virtual void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id);
 
 	virtual void valueTreeParentChanged(ValueTree& v) override;
@@ -327,7 +368,15 @@ public:
 	static void repaintComponent(ScriptCreatedComponentWrapper& w, bool unused)
 	{
 		if (auto c = w.getComponent())
+		{
+			if(dynamic_cast<simple_css::StyleSheetLookAndFeel*>(&c->getLookAndFeel()))
+			{
+				auto styleSheetPseudoState = w.getScriptComponent()->getStyleSheetPseudoState();
+				simple_css::FlexboxComponent::Helpers::writeManualPseudoState(*c, styleSheetPseudoState);
+			}
+
 			c->repaint();
+		}
 	}
 
     Processor *getProcessor();
@@ -734,13 +783,102 @@ public:
 		void updateColours();
 		void updateFont(ScriptingApi::Content::ScriptedViewport * vpc);
 
-		class ColumnListBoxModel : public ListBoxModel
+		class ColumnListBoxModel : public ListBoxModel,
+								   public MouseListener
 		{
 		public:
 			ColumnListBoxModel(ViewportWrapper* parent);
 
+			int prevHoverRow = -1;
+			int currentHoverRow = -1;
+
+			void initLookAndFeel()
+			{
+				auto c = parent->getComponent();
+
+				if(auto laf = dynamic_cast<simple_css::StyleSheetLookAndFeel*>(&c->getLookAndFeel()))
+				{
+					laf->initComponent(c, simple_css::Selector(simple_css::ElementType::TableRow));
+
+
+					c->addMouseListener(this, true);
+				}
+			}
+
+
+			void mouseDown(const MouseEvent& e) override
+			{
+				auto lb = dynamic_cast<ListBox*>(parent->getComponent());
+				lb->repaintRow(currentHoverRow);
+			}
+
+			void mouseExit(const MouseEvent& e) override
+			{
+				auto lb = dynamic_cast<ListBox*>(parent->getComponent());
+
+				lb->repaintRow(prevHoverRow);
+				lb->repaintRow(currentHoverRow);
+
+				prevHoverRow = currentHoverRow;
+				currentHoverRow = -1;
+			}
+
+			void mouseMove(const MouseEvent& event) override
+			{
+				auto lb = dynamic_cast<ListBox*>(parent->getComponent());
+
+				lb->repaintRow(prevHoverRow);
+				lb->repaintRow(currentHoverRow);
+
+				if(dynamic_cast<ScrollBar*>(event.eventComponent))
+				{
+					prevHoverRow = currentHoverRow;
+					currentHoverRow = -1;
+					return;
+				}
+
+				auto e = event.getEventRelativeTo(lb);
+
+				prevHoverRow = currentHoverRow;
+				currentHoverRow = lb->getRowContainingPosition(e.getPosition().getX(), e.getPosition().getY());
+			}
+
 			int getNumRows() override;
 
+			struct Repainter: public Component
+			{
+				Repainter(ListBox& parent_): parent(parent_)
+				{
+					setInterceptsMouseClicks(false, false);
+					setRepaintsOnMouseActivity(true);
+				}
+
+				void mouseEnter(const MouseEvent& e) override
+				{
+					parent.repaintRow(rowNumber);
+				}
+
+				void mouseExit(const MouseEvent& e) override
+				{
+					parent.repaintRow(rowNumber);
+				}
+
+				ListBox& parent;
+				int rowNumber;
+			};
+
+			Component* refreshComponentForRow (int rowNumber, bool isRowSelected,
+                                               Component* existingComponentToUpdate) override
+			{
+				if(existingComponentToUpdate == nullptr)
+				{
+					existingComponentToUpdate = new Repainter(*dynamic_cast<ListBox*>(parent->getComponent()));
+				}
+
+				dynamic_cast<Repainter*>(existingComponentToUpdate)->rowNumber = rowNumber;
+				
+				return existingComponentToUpdate;
+			}
 
 			void listBoxItemClicked(int row, const MouseEvent &) override;
 			void paintListBoxItem(int rowNumber, Graphics &g, int width, int height, bool rowIsSelected) override;
@@ -868,6 +1006,43 @@ public:
         void updateLookAndFeel();
         
 		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FloatingTileWrapper)
+	};
+
+	class DynamicComponentWrapper : public ScriptCreatedComponentWrapper
+	{
+	public:
+
+		DynamicComponentWrapper(ScriptContentComponent* content,
+		                        ScriptingApi::Content::ScriptDynamicContainer* container, int index);
+
+		void updateComponent() override {}
+
+	private:
+
+		struct WrapperComponent: public Component
+		{
+			static void onChange(WrapperComponent& c, dyncomp::Data::Ptr d)
+			{
+				if(d != nullptr)
+					c.addAndMakeVisible(c.root = new dyncomp::Root(d));
+				else
+					c.root = nullptr;
+
+				c.resized();
+				
+			}
+
+			void resized() override
+			{
+				if(root != nullptr)
+					root->setBounds(getLocalBounds());
+			}
+
+			ScopedPointer<dyncomp::Root> root;
+			JUCE_DECLARE_WEAK_REFERENCEABLE(WrapperComponent);
+		};
+
+		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicComponentWrapper);
 	};
 
 	class MultipageDialogWrapper : public ScriptCreatedComponentWrapper

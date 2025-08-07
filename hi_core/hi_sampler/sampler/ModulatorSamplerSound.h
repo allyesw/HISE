@@ -138,6 +138,7 @@ DECLARE_ID(LoopStart);
 DECLARE_ID(LoopEnd);
 DECLARE_ID(LoopXFade);
 DECLARE_ID(LoopEnabled);
+DECLARE_ID(ReleaseStart);
 DECLARE_ID(LowerVelocityXFade);
 DECLARE_ID(UpperVelocityXFade);
 DECLARE_ID(SampleState);
@@ -184,7 +185,7 @@ struct Helpers
 	static const Array<Identifier>& getAudioIds()
 	{
 		static const Array<Identifier> ids = { SampleStart,  SampleEnd,  SampleStartMod,  
-			LoopEnabled,  LoopStart,  LoopEnd,  LoopXFade };
+			LoopEnabled,  LoopStart,  LoopEnd,  LoopXFade, ReleaseStart };
 
 		return ids;
 	}
@@ -198,7 +199,7 @@ struct Helpers
 	static bool isAudioProperty(const Identifier& id)
 	{
 		return id == SampleStart || id == SampleEnd || id == SampleStartMod || id == LoopEnabled ||
-			id == LoopStart || id == LoopEnd || id == LoopXFade;
+			id == LoopStart || id == LoopEnd || id == LoopXFade || id == ReleaseStart;
 	}
 
 	static Array<Identifier> getAllIds()
@@ -223,6 +224,7 @@ struct Helpers
 			LoopEnd,
 			LoopXFade,
 			LoopEnabled,
+			ReleaseStart,
 			LowerVelocityXFade,
 			UpperVelocityXFade,
 			SampleState,
@@ -246,12 +248,13 @@ const int numProperties = 25;
 *	@ingroup sampler
 *
 *	It also contains methods that extend the properties of a StreamingSamplerSound. */
-class ModulatorSamplerSound : public ModulatorSynthSound,
+class ModulatorSamplerSound : public SynthSoundWithBitmask,
 							  public ControlledObject
 {
 public:
 
 	using Ptr = ReferenceCountedObjectPtr<ModulatorSamplerSound>;
+	using List = ReferenceCountedArray<ModulatorSamplerSound>;
 
 	// ====================================================================================================================
 
@@ -278,6 +281,7 @@ public:
 		LoopEnd, ///< the loop end in samples. This is independent from the sample start / end, but it checks the bounds.
 		LoopXFade, ///< the loop crossfade at the end of the loop (using a precalculated buffer)
 		LoopEnabled, ///< true if the sample should be looped
+		ReleaseStart, ///< the offset in the sample that will jump to when the note is released
 		LowerVelocityXFade, ///< the length of the velocity crossfade (0 if there is no crossfade). If the crossfade starts at the bottom, it will have negative values.
 		UpperVelocityXFade, ///< the length of the velocity crossfade (0 if there is no crossfade). If the crossfade starts at the bottom, it will have negative values.
 		SampleState, ///< this property allows to set the state of samples between 'Normal', 'Disabled' and 'Purged'
@@ -382,7 +386,7 @@ public:
 	*	Can also be achieved by getProperty(ID), but this is more convenient. */
 	int getId() const { return data.getParent().indexOf(data); };
 
-	Range<int> getNoteRange() const;
+	Range<int> getNoteRange() const override;
 	Range<int> getVelocityRange() const;
 
 	/** Returns the gain value of the sound.
@@ -421,16 +425,12 @@ public:
 
 	// ====================================================================================================================
 
-	void setMaxRRGroupIndex(int newGroupLimit);
-	void setRRGroup(int newGroupIndex) noexcept{ rrGroup = jmin(newGroupIndex, maxRRGroup); };
-	int getRRGroup() const;
-
 	// ====================================================================================================================
 
 	bool appliesToVelocity(int velocity) override { return velocityRange[velocity]; };
 	bool appliesToNote(int midiNoteNumber) override { return !purged && allFilesExist && midiNotes[midiNoteNumber]; };
 	bool appliesToChannel(int /*midiChannel*/) override { return true; };
-	bool appliesToRRGroup(int group) const noexcept{ return rrGroup == group; };
+	bool appliesToRRGroup(int group) const noexcept{ return getBitmask() == group; };
 
 	// ====================================================================================================================
 
@@ -494,8 +494,8 @@ public:
 
 	// ====================================================================================================================
 
-	bool isPurged() const noexcept{ return purged; };
-	void setPurged(bool shouldBePurged);
+	
+	void setPurged(bool shouldBePurged) override;
 	void checkFileReference();
 	bool isMissing() const noexcept
 	{
@@ -523,6 +523,12 @@ public:
 	void setSampleProperty(const Identifier& id, const var& newValue, bool useUndo=true);
 
 	var getSampleProperty(const Identifier& id) const;
+
+	void storeBitmask(Bitmask m, bool useUndo) override
+	{
+		SynthSoundWithBitmask::storeBitmask(m, useUndo);
+		setSampleProperty(SampleIds::RRGroup, (int64)m, useUndo);
+	}
 
 	void setDeletePending()
 	{
@@ -711,9 +717,8 @@ private:
     
 	int upperVeloXFadeValue = 0;
 	int lowerVeloXFadeValue = 0;
-	int rrGroup = 1;
+	
 	int rootNote;
-	int maxRRGroup;
 	BigInteger velocityRange;
 	BigInteger midiNotes;
 

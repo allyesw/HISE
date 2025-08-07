@@ -179,21 +179,7 @@ public:
 		return resourceType;
 	}
 
-	bool extractEmbedded()
-	{
-		if(resourceType == ResourceType::EmbeddedInSnippet)
-		{
-			if(!file.existsAsFile() || PresetHandler::showYesNoWindow("Overwrite local file", "The file " + getFile().getFileName() + " from the snippet already exists. Do you want to overwrite your local file?"))
-			{
-				file.getParentDirectory().createDirectory();
-				file.replaceWithText(content.getAllContent());
-				resourceType = ResourceType::FileBased;
-				return true;
-			}
-		}
-
-		return false;
-	}
+	bool extractEmbedded();
 
 private:
 
@@ -236,12 +222,9 @@ public:
 	void sendScriptCompileMessage(JavascriptProcessor *processorThatWasCompiled);
 
 	/** Adds a ScriptListener. You can influence the order of the callback by inserting Listeners at the beginning of the list. */
-	void addScriptListener(GlobalScriptCompileListener *listener, bool insertAtBeginning = false);;
+	void addScriptListener(GlobalScriptCompileListener *listener, bool insertAtBeginning = false, bool insertAsFirstElement=false);;
 
 	void removeScriptListener(GlobalScriptCompileListener *listener);;
-
-	void setShouldUseBackgroundThreadForCompiling(bool shouldBeEnabled) noexcept;
-	bool isUsingBackgroundThreadForCompiling() const noexcept;
 
 	double getCompileTimeOut() const noexcept;
 
@@ -265,6 +248,7 @@ public:
 	ExternalScriptFile::Ptr getExternalScriptFile(int index) const;
 
 	void clearIncludedFiles();
+	void removeIncludedFile(int index);
 
 	void restoreIncludedScriptFilesFromSnippet(const ValueTree& snippetTree);
 
@@ -288,11 +272,15 @@ public:
 
     void clearWebResources();
 
+	virtual void rebuildPluginParameters() {};
+
 	WebViewData::Ptr getOrCreateWebView(const Identifier& id);
 
 	Array<Identifier> getAllWebViewIds() const;
 
 	void setWebViewRoot(File newRoot);
+
+	void saveAllExternalFiles();
 
 private:
 	

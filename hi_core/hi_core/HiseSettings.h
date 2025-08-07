@@ -102,6 +102,7 @@ DECLARE_ID(DefaultUserPreset);
 DECLARE_ID(CompileWithPerfetto);
 DECLARE_ID(CompileWithDebugSymbols);
 DECLARE_ID(IncludeLorisInFrontend);
+DECLARE_ID(ProjectType);
 
 Array<Identifier> getAllIds();
 
@@ -119,6 +120,8 @@ DECLARE_ID(CustomNodePath);
 DECLARE_ID(FaustPath);
 DECLARE_ID(FaustExternalEditor);
 DECLARE_ID(EnableLoris);
+DECLARE_ID(ExportSetup);
+DECLARE_ID(DefaultProjectFolder);
 
 Array<Identifier> getAllIds();
 
@@ -165,6 +168,8 @@ namespace Other
 {
 DECLARE_ID(GlobalSamplePath);
 DECLARE_ID(UseOpenGL);
+DECLARE_ID(ShowWelcomeScreen);
+DECLARE_ID(GlobalHiseScaleFactor);
 DECLARE_ID(EnableShaderLineNumbers);
 DECLARE_ID(EnableAutosave);
 DECLARE_ID(AutosaveInterval);

@@ -254,6 +254,7 @@ private:
 *	You can create subclasses of this component and populate it with some SampleArea objects (you can nest them if desired)
 */
 class AudioDisplayComponent: public ComponentWithMiddleMouseDrag,
+							 public ProfiledComponent,
                              public SettableTooltipClient
 {
 public:
@@ -338,6 +339,8 @@ public:
 		/** Returns the hardcoded colour depending on the AreaType. */
 		static Colour getAreaColour(AreaTypes a);
 
+		static Colour getReleaseStartColour() { return Colour(0xFF944891); }
+
 		bool leftEdgeClicked;
 
 		class AreaEdge : public ResizableEdgeComponent,
@@ -369,7 +372,7 @@ public:
 		{
 			EdgeLookAndFeel(SampleArea *areaParent);;
 
-			void drawStretchableLayoutResizerBar (Graphics &g, int w, int h, bool isVerticalBar, bool isMouseOver, bool isMouseDragging) override;
+			void drawStretchableLayoutResizerBar (Graphics &g, Component&, int w, int h, bool isVerticalBar, bool isMouseOver, bool isMouseDragging) override;
 
 			const SampleArea *parentArea;
 		};
@@ -433,6 +436,7 @@ public:
 
 	void resized() override;
 
+	paintAndProfileChildren(g);
 	virtual void paintOverChildren(Graphics &g) override;
 
 	HiseAudioThumbnail* getThumbnail();
@@ -667,7 +671,7 @@ struct MultiChannelAudioBuffer : public ComplexDataUIBase
 
 	void loadFromEmbeddedData(SampleReference::Ptr r);
 
-	void loadBuffer(const AudioSampleBuffer& b, double sr);
+	void loadBuffer(const AudioSampleBuffer& b, double sr, Range<int> loopRange={});
 
 	void setLoopRange(Range<int> newLoopRange, NotificationType n);
 
@@ -804,6 +808,8 @@ class MultiChannelAudioBufferDisplay: public AudioDisplayComponent,
 									  public AudioDisplayComponent::Listener
 {
 public:
+
+	using ComplexDataType = hise::MultiChannelAudioBuffer;
 
 	enum AreaTypes
 	{
