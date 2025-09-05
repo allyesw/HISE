@@ -30,6 +30,7 @@ You have to use Terminal for this. Go to GitHub Desktop > Repository > Open in T
 4. ON MAC:
 	In the `Xcode (macOS)` exporter tab, add the following to Extra Preprocessor Definitions:
 	`NUM_HARDCODED_FX_MODS=6 NUM_HARDCODED_POLY_FX_MODS=6`
+	AS OF 9/4/25: `HISE_INCLUDE_PROFILING_TOOLKIT=1` (It will compile if 0, but CPU Profiling won't work. This should already be set on Win.)
 	In the `Xcode (macOS)` exporter tab, scroll to `Valid Architectures`, and make sure only `x86_64` is checked.
 
    ON WIN:
