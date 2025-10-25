@@ -27,12 +27,12 @@
 /*
   ==============================================================================
 
-   In accordance with the terms of the JUCE 6 End-Use License Agreement, the
+   In accordance with the terms of the JUCE 7 End-Use License Agreement, the
    JUCE Code in SECTION A cannot be removed, changed or otherwise rendered
    ineffective unless you have a JUCE Indie or Pro license, or are using JUCE
    under the GPL v3 license.
 
-   End User License Agreement: www.juce.com/juce-6-licence
+   End User License Agreement: www.juce.com/juce-7-licence
 
   ==============================================================================
 */
@@ -47,7 +47,7 @@
 
 #define JUCE_USE_DARK_SPLASH_SCREEN 1
 
-#define JUCE_PROJUCER_VERSION 0x60103
+#define JUCE_PROJUCER_VERSION 0x7000c
 
 //==============================================================================
 #define JUCE_MODULE_AVAILABLE_hi_backend                    1
@@ -138,10 +138,6 @@
 
 #ifndef    USE_SCRIPT_COPY_PROTECTION
  //#define USE_SCRIPT_COPY_PROTECTION 0
-#endif
-
-#ifndef    USE_IPP
- #define   USE_IPP 0
 #endif
 
 #ifndef    USE_VDSP_FFT
@@ -292,6 +288,10 @@
  //#define HISE_MACROS_ARE_PLUGIN_PARAMETERS 0
 #endif
 
+#ifndef    HISE_USE_MIDI_CHANNELS_FOR_AUTOMATION
+ //#define HISE_USE_MIDI_CHANNELS_FOR_AUTOMATION 0
+#endif
+
 //==============================================================================
 // hi_dsp_library flags:
 
@@ -301,6 +301,10 @@
 
 #ifndef    HI_EXPORT_DSP_LIBRARY
  #define   HI_EXPORT_DSP_LIBRARY 0
+#endif
+
+#ifndef    HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC
+ //#define HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC 1
 #endif
 
 #ifndef    IS_STATIC_DSP_LIBRARY
@@ -315,7 +319,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- //#define HISE_INCLUDE_FAUST 0
+ #define   HISE_INCLUDE_FAUST 1
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -379,6 +383,22 @@
 
 #ifndef    INCLUDE_BIG_SCRIPTNODE_OBJECT_COMPILATION
  //#define INCLUDE_BIG_SCRIPTNODE_OBJECT_COMPILATION 1
+#endif
+
+#ifndef    HISE_SEND_PANEL_CHANGED_TO_PLUGIN_PARAMETER
+ //#define HISE_SEND_PANEL_CHANGED_TO_PLUGIN_PARAMETER 0
+#endif
+
+#ifndef    HISE_INCLUDE_BX_LICENSER
+ //#define HISE_INCLUDE_BX_LICENSER 0
+#endif
+
+#ifndef    HISE_INCLUDE_NKS_SDK
+ //#define HISE_INCLUDE_NKS_SDK 0
+#endif
+
+#ifndef    HISE_USE_SCRIPT_RECTANGLE_OBJECT
+ //#define HISE_USE_SCRIPT_RECTANGLE_OBJECT 0
 #endif
 
 //==============================================================================
