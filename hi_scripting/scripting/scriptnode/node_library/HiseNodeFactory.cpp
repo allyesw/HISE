@@ -208,9 +208,10 @@ struct TransportDisplay : public juce::ComponentWithMiddleMouseDrag,
 
 	void timerCallback() override
 	{
-		if (auto c = findParentComponentOfClass<ControlledObject>())
+		if (auto nc = findParentComponentOfClass<NodeComponent>())
 		{
-			hise::MainController* mc = c->getMainController();
+            auto mc = nc->node->getScriptProcessor()->getMainController_();
+            
 			auto shouldBePlaying = mc->getMasterClock().isPlaying();
 
 			if (isPlaying != shouldBePlaying)
@@ -1038,26 +1039,39 @@ namespace math
 
 
 struct NeuralComp : public ScriptnodeExtraComponent<NodeBase>
-              
 {
     NeuralComp(NodeBase* n, PooledUIUpdater* updater) :
         ScriptnodeExtraComponent<NodeBase>(n, updater),
-        networkSelector("", PropertyIds::Model)
+        networkSelector("", PropertyIds::Model),
+        hpfSelector("Off", PropertyIds::HpfFreq)
     {
 #if HISE_INCLUDE_RT_NEURAL
         auto& holder = n->getScriptProcessor()->getMainController_()->getNeuralNetworks();
         networkSelector.initModes(holder.getIdList(), n);
-		addAndMakeVisible(networkSelector);
+        addAndMakeVisible(networkSelector);
+
+        hpfSelector.initModes({ "Off", "1 Hz", "5 Hz" }, n);
+        addAndMakeVisible(hpfSelector);
 #endif
-        
-        setSize(128, 32);
+
+        setSize(128, 64);
     };
 
     ComboBoxWithModeProperty networkSelector;
+    ComboBoxWithModeProperty hpfSelector;
 
     void resized() override
     {
+#if HISE_INCLUDE_RT_NEURAL
+        auto area = getLocalBounds().reduced(0, 4);
+        const int rowHeight = 24;
+
+        networkSelector.setBounds(area.removeFromTop(rowHeight));
+        area.removeFromTop(4);
+        hpfSelector.setBounds(area.removeFromTop(rowHeight));
+#else
         networkSelector.setBounds(getLocalBounds());
+#endif
     }
 
     void timerCallback() override
@@ -1082,17 +1096,21 @@ template <int NV> struct NeuralNode: public NodeBase
     
     NeuralNode(DspNetwork* root, const ValueTree& data):
       NodeBase(root, data, 0),
-      networkId(PropertyIds::Model, "")
+      networkId(PropertyIds::Model, ""),
+      hpfFrequency(PropertyIds::HpfFreq, "Off")
     {
         cppgen::CustomNodeProperties::setPropertyForObject(*this, PropertyIds::IsFixRuntimeTarget);
         
         networkId.initialise(this);
         networkId.setAdditionalCallback(BIND_MEMBER_FUNCTION_2(NeuralNode::updateModel), true);
+
+        hpfFrequency.initialise(this);
+        hpfFrequency.setAdditionalCallback(BIND_MEMBER_FUNCTION_2(NeuralNode::updateHpf), true);
     }
     
     AttributedString getDescription() const override
     {
-        return AttributedString(obj.getDescription());
+        return AttributedString(obj.getWrappedObject().getDescription());
     }
 
     NodeComponent* createComponent() override
@@ -1126,6 +1144,11 @@ template <int NV> struct NeuralNode: public NodeBase
     {
         NodeBase::prepare(ps);
 
+		
+
+#if USE_BACKEND && HISE_INCLUDE_RT_NEURAL
+		obj.getWrappedObject().warmup = getRootNetwork()->getMainController()->getExtraDefinitionsValue("HISE_NEURAL_NETWORK_WARMUP_TIME", 0);
+#endif
         obj.prepare(ps);
     }
     
@@ -1145,25 +1168,58 @@ template <int NV> struct NeuralNode: public NodeBase
 
 
             auto nn = getScriptProcessor()->getMainController_()->getNeuralNetworks().getOrCreate(newId);
-            
+
             // make sure it matches when connecting
-            obj.getIndex().currentHash = nn->getRuntimeHash();
-            obj.connectToRuntimeTarget(true, nn->createConnection());
+            auto& neuralObj = obj.getWrappedObject();
+            neuralObj.getIndex().currentHash = nn->getRuntimeHash();
+            neuralObj.connectToRuntimeTarget(true, nn->createConnection());
 
         }
         else
         {
-            if(auto nn = obj.getCurrentNetwork())
+            auto& neuralObj = obj.getWrappedObject();
+
+            if(auto nn = neuralObj.getCurrentNetwork())
             {
-                obj.connectToRuntimeTarget(false, nn->createConnection());
+                neuralObj.connectToRuntimeTarget(false, nn->createConnection());
             }
         }
 #endif
     }
+
+    void updateHpf(Identifier, var value)
+    {
+#if HISE_INCLUDE_RT_NEURAL
+        auto text = value.toString().trim();
+        auto lower = text.toLowerCase();
+
+        auto& neuralObj = obj.getWrappedObject();
+        auto freq = HpfFrequency::Off;
+
+        if(lower == "1 hz" || lower == "1hz" || lower == "1")
+            freq = HpfFrequency::Hz1;
+        else if(lower == "5 hz" || lower == "5hz" || lower == "5")
+            freq = HpfFrequency::Hz5;
+
+        neuralObj.setHpfFrequency(freq);
+#else
+        ignoreUnused(value);
+#endif
+    }
+
+    void setBypassed(bool shouldBeBypassed) override
+    {
+        NodeBase::setBypassed(shouldBeBypassed);
+        obj.setBypassed(shouldBeBypassed);
+    }
+
+    using NeuralType = neural<NV, runtime_target::indexers::dynamic>;
+    using BypassWrapper = bypass::simple<NeuralType>;
     
-    neural<NV, runtime_target::indexers::dynamic> obj;
+    BypassWrapper obj;
     
     NodePropertyT<String> networkId;
+    NodePropertyT<String> hpfFrequency;
 };
 
 struct map_editor : public simple_visualiser
@@ -1297,6 +1353,8 @@ namespace control
 
         registerNoProcessNode<dynamic_pack_resizer, data::ui::sliderpack_editor>();
         
+		registerPolyNoProcessNode<branch_cable<1, parameter::dynamic_list>, branch_cable<NUM_POLYPHONIC_VOICES, parameter::dynamic_list>, branch_editor>()
+
         ;
         
         registerNoProcessNode<wrap::data<pack2_writer, data::dynamic::sliderpack>, data::ui::sliderpack_editor_without_mod>();
@@ -1860,6 +1918,12 @@ Factory::Factory(DspNetwork* network) :
 						false>();
 
 	registerNode<voice_manager, voice_manager_base::editor>();
+
+	using gi = runtime_target::indexers::fix_hash<1>;
+	using ei = modulation::config::ExtraIndexer;
+	using ph = parameter::dynamic_base_holder;
+	registerPolyModNode<global_mod_gate<1, gi>, global_mod_gate<NUM_POLYPHONIC_VOICES, gi>, ModulationSourceBaseComponent>();
+	registerPolyModNode<extra_mod_gate<1, ei>, extra_mod_gate<NUM_POLYPHONIC_VOICES, ei>, ModulationSourceBaseComponent>();
 
 	registerPolyNode<silent_killer<1>, silent_killer<NUM_POLYPHONIC_VOICES>, voice_manager_base::editor>();
 }

@@ -983,7 +983,7 @@ bool MidiControllerAutomationHandler::handleControllerMessage(const HiseEvent& e
 					}
 					else
 					{
-						a.processor->setAttribute(a.attribute, snappedValue, sendNotificationAsync);
+						a.processor->setAttribute(a.attribute, snappedValue, sendNotificationSync);
 					}
 
 					a.lastValue = snappedValue;
@@ -1865,6 +1865,7 @@ String OverlayMessageBroadcaster::getOverlayTextMessage(State s) const
 #endif
 
 		break;
+#if HISE_INCLUDE_UNLOCKER_OVERLAY
 	case LicenseNotFound:
 	{
 #if USE_COPY_PROTECTION
@@ -1906,6 +1907,7 @@ String OverlayMessageBroadcaster::getOverlayTextMessage(State s) const
 		return "";
 #endif
 	}
+#endif
 	case State::CustomErrorMessage:
 	case State::CriticalCustomErrorMessage:
 	case State::CustomInformation:
