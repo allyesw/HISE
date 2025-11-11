@@ -68,6 +68,8 @@ DspNetwork::DspNetwork(hise::ProcessorWithScriptingContent* p, ValueTree data_, 
 {
 	jassert(data.getType() == PropertyIds::Network);
 
+	auto mc = getMainController();
+	tempoSyncer.ppqFunction = [mc](int ts){ return mc->getMasterClock().getPPQPos(ts); };
 	tempoSyncer.publicModValue = &networkModValue;
 
 	auto mc_ = p->getMainController_();
@@ -1494,6 +1496,13 @@ void DspNetwork::Holder::unload()
     manager.setCurrentWorkbench(nullptr, false);
     networks.clear();
     setActiveNetwork(nullptr);
+
+	if(auto extra = dynamic_cast<JavascriptProcessor*>(this)->getExtraModulationHandler())
+	{
+		extra->updateModulationProperties({}, {});
+		extra->updateModulationChainIdAndColour(dynamic_cast<Processor*>(this), {}, [](int) { return String(); });
+	}
+
 #endif
 }
 
@@ -2285,6 +2294,8 @@ String ScriptnodeExceptionHandler::getErrorMessage(Error e)
 	case Error::CompileFail:	s << "Compilation error** at Line " << e.expected << ", Column " << e.actual; return s;
 	case Error::UncompiledThirdPartyNode: s << "Uncompiled Third Party Node. Export the DLL and restart HISE to load this node."; return s;
 	case Error::UnscaledModRangeMismatch: s << "Unscaled mod range mismatch.  \n> Copy range to source"; return s;
+	case Error::NoNeuralNetwork: s << "No neural network found with hash `" << String(e.expected) << "`"; return s;
+	case Error::NoGlobalCable: s << "No global cable found with hash `" << String(e.expected) << "`"; return s;
 	default:
 		break;
 	}
@@ -2378,13 +2389,21 @@ void DspNetwork::DynamicParameterModulationProperties::refreshConnections()
 
 void DspNetwork::DynamicParameterModulationProperties::init()
 {
-	propertyListener.setCallback(parent.data, { PropertyIds::ExternalModulation }, valuetree::AsyncMode::Synchronously, 
+	propertyListener.setCallback(parent.data, { PropertyIds::ExternalModulation, PropertyIds::ID, PropertyIds::ModColour }, valuetree::AsyncMode::Synchronously, 
 	[this](const ValueTree& v, const Identifier& id)
 	{
-		refreshConnections();
+		if(id == PropertyIds::ModColour || id == PropertyIds::ID)
+		{
+			refreshIdAndColours();
+		}
+		else
+		{
+			refreshConnections();
+		}
 	});
 
 	refreshConnections();
+	refreshIdAndColours();
 
 	blockSizeListener.setCallback(parent.data, { PropertyIds::ModulationBlockSize}, valuetree::AsyncMode::Synchronously, 
 		[this](const Identifier&, const var& newValue)
@@ -2406,6 +2425,21 @@ void DspNetwork::DynamicParameterModulationProperties::init()
 			refreshConnections();
 		}
 	});
+}
+
+void DspNetwork::DynamicParameterModulationProperties::refreshIdAndColours()
+{
+	auto parentProcessor = dynamic_cast<Processor*>(parent.getScriptProcessor());
+
+	if (auto extra = parent.getParentHolder()->getExtraModulationHandler())
+	{
+		auto pTree = parent.getRootNode()->getParameterTree();
+
+		extra->updateModulationChainIdAndColour(parentProcessor, data, [pTree](int pIndex)
+		{
+			return pTree.getChild(pIndex)[PropertyIds::ID].toString();
+		});
+	}
 }
 
 DspNetwork::AnonymousNodeCloner::AnonymousNodeCloner(DspNetwork& p, NodeBase::Holder* other):

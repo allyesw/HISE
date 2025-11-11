@@ -1210,6 +1210,7 @@ struct ScriptingApi::Engine::Wrapper
 	API_METHOD_WRAPPER_0(Engine, getOS);
 	API_METHOD_WRAPPER_0(Engine, getSystemStats);
 	API_METHOD_WRAPPER_2(Engine, getTextForValue);
+	API_METHOD_WRAPPER_2(Engine, getValueForText);
 	API_METHOD_WRAPPER_0(Engine, isPlugin);
 	API_METHOD_WRAPPER_0(Engine, isHISE);
 	API_VOID_METHOD_WRAPPER_0(Engine, reloadAllSamples);
@@ -1387,6 +1388,7 @@ parentMidiProcessor(dynamic_cast<ScriptBaseMidiProcessor*>(p))
 	ADD_API_METHOD_1(isControllerUsedByAutomation);
 	ADD_API_METHOD_0(getSettingsWindowObject);
 	ADD_API_METHOD_2(getTextForValue);
+	ADD_API_METHOD_2(getValueForText);
 	ADD_API_METHOD_0(createTimerObject);
 	ADD_API_METHOD_0(createMessageHolder);
 	ADD_API_METHOD_1(createAndRegisterSliderPackData);
@@ -1518,6 +1520,7 @@ void ScriptingApi::Engine::addModuleStateToUserPreset(var moduleId)
 
 	auto childList = ProcessorHelpers::getListOfAllProcessors<Processor>(p);
 
+#if 0
 	for (auto c : childList)
 	{
 		if (c == p)
@@ -1529,6 +1532,7 @@ void ScriptingApi::Engine::addModuleStateToUserPreset(var moduleId)
 			return;
 		}
 	}
+#endif
 
 	bool wasRemoved = false;
 
@@ -2694,6 +2698,7 @@ struct ScriptingApi::Settings::Wrapper
 	API_METHOD_WRAPPER_1(Settings, isMidiChannelEnabled);
 	API_METHOD_WRAPPER_0(Settings, getUserDesktopSize);
 	API_METHOD_WRAPPER_0(Settings, isOpenGLEnabled);
+	API_METHOD_WRAPPER_1(Settings, isIppEnabled);
 	API_VOID_METHOD_WRAPPER_1(Settings, setEnableOpenGL);
 	API_VOID_METHOD_WRAPPER_1(Settings, setEnableDebugMode);
 	API_VOID_METHOD_WRAPPER_0(Settings, startPerfettoTracing);
@@ -2726,6 +2731,7 @@ ScriptingApi::Settings::Settings(ProcessorWithScriptingContent* s) :
 	ADD_API_METHOD_0(getAvailableBufferSizes);
 	ADD_API_METHOD_0(getCurrentBufferSize);
 	ADD_API_METHOD_1(setBufferSize);
+	ADD_API_METHOD_1(isIppEnabled);
 	ADD_API_METHOD_0(getAvailableSampleRates);
 	ADD_API_METHOD_0(getCurrentSampleRate);
 	ADD_API_METHOD_1(setSampleRate);
@@ -3075,6 +3081,20 @@ bool ScriptingApi::Settings::isMidiChannelEnabled(int index)
 		return channelFilterData->areAllChannelsEnabled();
 	else 
 		return channelFilterData->isChannelEnabled(index - 1);
+}
+
+bool ScriptingApi::Settings::isIppEnabled(bool returnTrueIfMacOS)
+{
+#if JUCE_WINDOWS
+#if USE_IPP
+	return true;
+#else
+	return false;
+#endif
+#else
+	return returnTrueIfMacOS;
+#endif
+
 }
 
 struct DynamicArrayComparator
@@ -7920,8 +7940,8 @@ ScriptingApi::Server::Server(JavascriptProcessor* jp_):
 	addConstant("StatusAuthenticationFail", StatusAuthenticationFail);
 
 	ADD_API_METHOD_1(setBaseURL);
-	ADD_TYPED_API_METHOD_3(callWithPOST, VarTypeChecker::String, VarTypeChecker::JSON, VarTypeChecker::Function);
-	ADD_TYPED_API_METHOD_3(callWithGET, VarTypeChecker::String, VarTypeChecker::JSON, VarTypeChecker::Function);
+	ADD_TYPED_API_METHOD_3(callWithPOST, VarTypeChecker::String, VarTypeChecker::ComplexType, VarTypeChecker::Function);
+	ADD_TYPED_API_METHOD_3(callWithGET, VarTypeChecker::String, VarTypeChecker::ComplexType, VarTypeChecker::Function);
 	ADD_TYPED_API_METHOD_1(setHttpHeader, VarTypeChecker::String);
     ADD_TYPED_API_METHOD_4(downloadFile, VarTypeChecker::String, VarTypeChecker::JSON, VarTypeChecker::ScriptObject, VarTypeChecker::Function);
 	ADD_API_METHOD_0(getPendingDownloads);

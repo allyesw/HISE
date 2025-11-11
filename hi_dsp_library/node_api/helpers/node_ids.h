@@ -84,6 +84,9 @@ DECLARE_ID(NumParameters);
 DECLARE_ID(Value);
 DECLARE_ID(DefaultValue);	
 DECLARE_ID(ID);
+DECLARE_ID(Page);
+DECLARE_ID(CurrentPageIndex);
+DECLARE_ID(SubGroup);
 DECLARE_ID(Index);
 DECLARE_ID(NodeId);
 DECLARE_ID(NumClones);
@@ -127,6 +130,7 @@ DECLARE_ID(ClassId);
 DECLARE_ID(AllowSubBlocks);
 DECLARE_ID(Mode);
 DECLARE_ID(Model);
+DECLARE_ID(HpfFreq);
 DECLARE_ID(BlockSize);
 DECLARE_ID(IsPolyphonic);
 DECLARE_ID(UseRingBuffer);
@@ -153,6 +157,7 @@ DECLARE_ID(SuspendOnSilence);
 DECLARE_ID(TextToValueConverter);
 DECLARE_ID(ModulationBlockSize);
 DECLARE_ID(ExternalModulation);
+DECLARE_ID(ModColour);
 
 struct Helpers
 {
@@ -172,6 +177,9 @@ struct Helpers
 			AllowPolyphonic,
 			AllowCompilation,
 			HasTail,
+			Page,
+			CurrentPageIndex,
+			SubGroup,
 			SuspendOnSilence,
             CompileChannelAmount,
 			TextToValueConverter,
@@ -189,6 +197,9 @@ struct Helpers
 		returnIfDefault(NodeColour, 0x000000);
 		returnIfDefault(Folded, false);
 		returnIfDefault(Expression, "");
+		returnIfDefault(Page, "");
+		returnIfDefault(CurrentPageIndex, 0);
+		returnIfDefault(SubGroup, "");
 		returnIfDefault(SkewFactor, 1.0);
 		returnIfDefault(StepSize, 0.0);
 		returnIfDefault(Inverted, false);
@@ -202,6 +213,7 @@ struct Helpers
 		returnIfDefault(TextToValueConverter, "Undefined");
 		returnIfDefault(ModulationBlockSize, 0);
 		returnIfDefault(ExternalModulation, "Disabled");
+		returnIfDefault(ModColour, (int)HiseModulationColours::ColourId::ExtraMod);
 
         return {};
 	}

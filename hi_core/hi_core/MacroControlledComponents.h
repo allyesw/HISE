@@ -199,6 +199,9 @@ struct HisePluginParameterBase: public ControlledObject,
 		auto t = mc->getKillStateHandler().getCurrentThread();
 		auto defer = mc->getDeferNotifyHostFlag() || t != MainController::KillStateHandler::TargetThread::MessageThread;
 
+		if(!getMainController()->getPluginParameterUpdateState())
+			return;
+
 		if(defer)
 			triggerAsyncUpdate();
 		else
@@ -228,6 +231,11 @@ struct HisePluginParameterBase: public ControlledObject,
 		auto typed = dynamic_cast<juce::AudioProcessorParameter*>(this);
 		jassert(typed != nullptr);
 		return typed;
+	}
+
+	void setSendToHost(bool shouldSendToHost)
+	{
+		sendToHost = shouldSendToHost;
 	}
 
 protected:
@@ -685,47 +693,7 @@ public:
     
 	bool enableShiftTextInput = true;
 
-    bool performModifierAction(const MouseEvent& e, bool isDoubleClick, bool isMouseDown = true)
-    {
-        auto a = modObject.getActionForModifier(e.mods, isDoubleClick);
-        
-        if(isMouseDown && a == ModifierObject::Action::TextInput)
-        {
-            onShiftClick(e);
-			return true;
-        }
-        if(isMouseDown && a == ModifierObject::Action::ResetToDefault)
-        {
-            if(asSlider()->isDoubleClickReturnEnabled())
-            {
-                auto defaultValue = asSlider()->getDoubleClickReturnValue();
-                asSlider()->setValue(defaultValue, sendNotificationSync);
-                return true;
-            }
-        }
-        if(isMouseDown && a == ModifierObject::Action::ContextMenu)
-        {
-            if(auto mco = dynamic_cast<MacroControlledObject*>(this))
-				mco->enableMidiLearnWithPopup();
-			else if(customPopupFunction)
-				customPopupFunction(e);
-
-            return true;
-        }
-		if(a == ModifierObject::Action::ScaleModulation)
-		{
-			if(scaleFunction)
-			{
-				float delta = ModulationDisplayValue::getDeltaForDragEvent(*asSlider(), e);
-				
-				return scaleFunction(isMouseDown, delta);
-			}
-
-			return true;
-		}
-        
-        return false;
-    }
+    bool performModifierAction(const MouseEvent& e, bool isDoubleClick, bool isMouseDown = true);
 
 protected:
 
@@ -988,6 +956,8 @@ private:
 	double dragStartValue = 0.0f;
 	ScopedPointer<LookAndFeel> laf;
 	HoverPopupLookandFeel fallback;
+
+	bool skipGestureActive = false;
 };
 
 

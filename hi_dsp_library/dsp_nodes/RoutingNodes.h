@@ -1167,10 +1167,27 @@ public runtime_target::indexable_target<IndexType, runtime_target::RuntimeTarget
         
     };
     
-    ~global_cable() = default;
+    ~global_cable()
+	{
+		this->disconnect();	
+	};
     
     static constexpr bool isPolyphonic() { return false; }
     
+	void prepare(PrepareSpecs ps)
+	{
+		if(ps)
+		{
+			if(IndexType::mustBeConnected() && !this->isConnected())
+			{
+				scriptnode::Error e;
+				e.error = scriptnode::Error::NoGlobalCable;
+				e.expected = this->index.getIndex();
+				throw e;
+			}
+		}
+	}
+
     void onValue(double c) override
     {
         if(recursion)
@@ -1366,10 +1383,19 @@ template <typename... Ts> struct global_cable_cpp_manager: private advanced_tupl
 
 	virtual ~global_cable_cpp_manager()
 	{
-		this->connectToRuntimeTarget(false, {});
+		if(!cleanedUp)
+			cleanup();
 	}
 
-	void connectToRuntimeTarget(bool addConnection, const runtime_target::connection& c)
+	bool cleanedUp = false;
+
+	void cleanup()
+	{
+		this->connectToRuntimeTarget(false, {});
+		cleanedUp = true;
+	}
+
+	virtual void connectToRuntimeTarget(bool addConnection, const runtime_target::connection& c)
 	{
 		reset_each(addConnection, c, this->getIndexSequence());
 
@@ -1380,6 +1406,11 @@ template <typename... Ts> struct global_cable_cpp_manager: private advanced_tupl
 			for(auto& c: this->pendingData)
 				c = {};
 		}
+	}
+
+	virtual void prepare(PrepareSpecs ps)
+	{
+		prepare_each(ps, this->getIndexSequence());
 	}
 
 	template <auto CableIndex> void sendDataToGlobalCable(const var& dataToSend)
@@ -1418,6 +1449,11 @@ private:
 	template <std::size_t ...Ns> void reset_each(bool addConnection, const runtime_target::connection& c, std::index_sequence<Ns...>)
 	{
 		using swallow = int[]; (void)swallow { 1, ( std::get<Ns>(this->elements).connectToRuntimeTarget(addConnection, c) , void(), int{})... };
+	};
+
+	template <std::size_t ...Ns> void prepare_each(PrepareSpecs ps, std::index_sequence<Ns...>)
+	{
+		using swallow = int[]; (void)swallow { 1, (std::get<Ns>(this->elements).prepare(ps), void(), int{})... };
 	};
 
 	template <std::size_t ...Ns> void sendPending_each(std::index_sequence<Ns...>)

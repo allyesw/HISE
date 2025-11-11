@@ -119,15 +119,16 @@ void HardcodedMasterFX::connectionChanged()
 
 bool HardcodedMasterFX::setEffect(const String& newEffect, bool cond)
 {
-		
-
 	auto ok = HardcodedSwappableEffect::setEffect(newEffect, true);
 
 	if(ok)
 	{
 		extraMods.updateModulationProperties(modProperties, 
-		                                     BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
+			BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
 	}
+
+	extraMods.updateModulationChainIdAndColour(this, modProperties,
+		BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getOpaqueNodeParameterId));
 
 	return ok;
 }
@@ -538,7 +539,9 @@ bool HardcodedPolyphonicFX::isVoiceResetActive() const
 void HardcodedPolyphonicFX::onVoiceReset(bool allVoices, int voiceIndex)
 {
 	if (allVoices)
-		voiceStack.voiceNoteOns.clear();
+	{
+		getMainController()->allNotesOff();
+	}
 	else
 		voiceStack.reset(voiceIndex);
 }
@@ -551,8 +554,11 @@ bool HardcodedPolyphonicFX::setEffect(const String& effectName, bool cond)
 	{
 		jassert(opaqueNode != nullptr);
 		extraModSources.updateModulationProperties(modProperties, 
-		                                           BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
+			BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
 	}
+
+	extraModSources.updateModulationChainIdAndColour(this, modProperties,
+		BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getOpaqueNodeParameterId));
 
 	return ok;
 }
@@ -766,8 +772,7 @@ void HardcodedEnvelopeModulator::onVoiceReset(bool allVoices, int voiceIndex)
 {
 	if (allVoices)
 	{
-		for (int i = 0; i < polyManager.getVoiceAmount(); i++)
-			reset(i);
+		getMainController()->allNotesOff();
 	}
 	else
 		reset(voiceIndex);
@@ -1082,12 +1087,32 @@ void HardcodedSynthesiser::restoreFromValueTree(const ValueTree& v)
 
 float HardcodedSynthesiser::getAttribute(int parameterIndex) const
 {
-	return getHardcodedAttribute(parameterIndex);
+	auto offset = getParameterOffset();
+
+	if(parameterIndex < offset)
+		return ModulatorSynth::getAttribute(parameterIndex);
+
+	return getHardcodedAttribute(parameterIndex - offset);
 }
 
 void HardcodedSynthesiser::setInternalAttribute(int parameterIndex, float newValue)
 {
-	setHardcodedAttribute(parameterIndex, newValue);
+	auto offset = getParameterOffset();
+
+	if(parameterIndex < offset)
+		ModulatorSynth::setInternalAttribute(parameterIndex, newValue);
+	else
+		setHardcodedAttribute(parameterIndex - offset, newValue);
+}
+
+float HardcodedSynthesiser::getDefaultValue(int parameterIndex) const
+{
+	auto offset = getParameterOffset();
+
+	if(parameterIndex < offset)
+		return ModulatorSynth::getDefaultValue(parameterIndex);
+
+	return getAttribute(parameterIndex - offset);
 }
 
 void HardcodedSynthesiser::connectToRuntimeTargets(scriptnode::OpaqueNode& opaqueNode, bool shouldAdd)
@@ -1105,6 +1130,7 @@ void HardcodedSynthesiser::connectToRuntimeTargets(scriptnode::OpaqueNode& opaqu
 
 ModulationDisplayValue::QueryFunction::Ptr HardcodedSynthesiser::getModulationQueryFunction(int parameterIndex) const
 {
+	parameterIndex -= getParameterOffset();
 	return extraModSources.getModulationQueryFunction(modProperties, parameterIndex);
 }
 
@@ -1116,8 +1142,11 @@ bool HardcodedSynthesiser::setEffect(const String& effectName, bool cond)
 	{
 		jassert(opaqueNode != nullptr);
 		extraModSources.updateModulationProperties(modProperties, 
-		                                           BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
+			BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
 	}
+
+	extraModSources.updateModulationChainIdAndColour(this, modProperties,
+		BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getOpaqueNodeParameterId));
 
 	return ok;
 }
@@ -1126,8 +1155,7 @@ void HardcodedSynthesiser::onVoiceReset(bool allVoices, int voiceIndex)
 {
 	if (allVoices)
 	{
-		for(auto v: activeVoices)
-			v->resetVoice();
+		getMainController()->allNotesOff();
 	}
 	else
 	{

@@ -737,7 +737,10 @@ var NodeBase::getOrCreateParameter(var indexOrId) const
 		if(indexOrId.hasProperty("mode"))
 			p.setProperty(PropertyIds::TextToValueConverter, indexOrId["mode"], nullptr);
 
+		PropertyIds::Helpers::setToDefault(p, PropertyIds::ModColour);
 		PropertyIds::Helpers::setToDefault(p, PropertyIds::ExternalModulation);
+		PropertyIds::Helpers::setToDefault(p, PropertyIds::Page);
+		PropertyIds::Helpers::setToDefault(p, PropertyIds::SubGroup);
 
 		if(defaultValue.first)
 		{

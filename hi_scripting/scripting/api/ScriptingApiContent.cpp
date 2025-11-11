@@ -1104,7 +1104,22 @@ void ScriptingApi::Content::ScriptComponent::AsyncControlCallbackSender::handleA
 {
 	if (parent != nullptr)
 	{
-		p->controlCallback(parent, parent->getValue());
+		auto v = parent->getValue();
+
+		if(v.isDouble() || v.isInt() || v.isInt64() || v.isBool())
+		{
+			auto value = (float)v;
+			FloatSanitizers::sanitizeFloatNumber(value);
+
+			if(cachedParameterIndex == -1)
+				cachedParameterIndex = p->getScriptingContent()->getComponentIndex(parent);
+
+			dynamic_cast<Processor*>(p)->setAttribute(cachedParameterIndex, value, dispatch::sendNotificationSync);
+		}
+		else
+		{
+			p->controlCallback(parent, v);
+		}
 
 		if (auto sp = dynamic_cast<ScriptPanel*>(parent))
 			sp->repaint();
@@ -1540,6 +1555,7 @@ juce::Array<hise::ScriptingApi::Content::ScriptComponent::PropertyWithValue> Scr
 	vArray.add({ Properties::isMetaParameter, false });
 	vArray.add({ Properties::processorId, "" });
 	vArray.add({ Properties::parameterId, "" });
+	
 
 	return vArray;
 }
@@ -2471,7 +2487,7 @@ void ScriptingApi::Content::ScriptSlider::setValueNormalized(double normalizedVa
 	if (minValue < maxValue &&
 		midPoint > minValue &&
 		midPoint < maxValue &&
-		step > 0.0)
+		step >= 0.0)
 	{
 		const double skew = log(0.5) / log((midPoint - minValue) / (maxValue - minValue));
 
@@ -2511,7 +2527,7 @@ double ScriptingApi::Content::ScriptSlider::getValueNormalized() const
 	if (minValue < maxValue &&
 		midPoint > minValue &&
 		midPoint < maxValue &&
-		step > 0.0)
+		step >= 0.0)
 	{
 		const double skew = log(0.5) / log((midPoint - minValue) / (maxValue - minValue));
 
@@ -2612,6 +2628,7 @@ juce::Array<hise::ScriptingApi::Content::ScriptComponent::PropertyWithValue> Scr
 	idList.add({ Properties::stepSize });
 	idList.add({ Properties::suffix });
 	idList.add({ ScriptComponent::defaultValue });
+	idList.add({ Properties::matrixTargetId });
 
 	return idList;
 }
