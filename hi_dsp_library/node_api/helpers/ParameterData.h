@@ -37,66 +37,7 @@ namespace scriptnode
 using namespace juce;
 using namespace hise;
 
-struct InvertableParameterRange
-{
-	InvertableParameterRange(double start, double end) :
-		rng(start, end),
-		inv(false)
-	{};
 
-	InvertableParameterRange() :
-		rng(0.0, 1.0),
-		inv(false)
-	{};
-
-	bool operator==(const InvertableParameterRange& other) const;
-
-	InvertableParameterRange(const ValueTree& v);
-
-	void store(ValueTree& v, UndoManager* um);
-
-	InvertableParameterRange(double start, double end, double interval, double skew=1.0) :
-		rng(start, end, interval, skew),
-		inv(false)
-	{};
-
-	double convertFrom0to1(double input, bool applyInversion) const;
-
-	InvertableParameterRange inverted() const
-	{
-		auto copy = *this;
-		copy.inv = !copy.inv;
-		return copy;
-	}
-
-	double convertTo0to1(double input, bool applyInversion) const;
-
-	Range<double> getRange() const
-	{
-		return rng.getRange();
-	}
-
-	double snapToLegalValue(double v) const
-	{
-		return rng.snapToLegalValue(v);
-	}
-
-	void setSkewForCentre(double value)
-	{
-		rng.setSkewForCentre(value);
-	}
-
-	void checkIfIdentity();
-
-	juce::NormalisableRange<double> rng;
-	bool inv = false;
-
-	bool isNonDefault() const { return !isIdentity; }
-
-private:
-
-	bool isIdentity = false;
-};
 
 struct OSCConnectionData: public ReferenceCountedObject
 {
@@ -194,6 +135,38 @@ struct RangeHelpers
 	{
 		return { PropertyIds::NodeId, PropertyIds::ParameterId, Identifier("Enabled") };
 	}
+
+	struct RangePresets
+	{
+		RangePresets();
+
+		int getPresetIndex(const InvertableParameterRange& r)
+		{
+			for (int i = 0; i < presets.size(); i++)
+			{
+				if (presets[i].nr == r)
+					return i;
+			}
+
+			return -1;
+		}
+
+		~RangePresets();
+
+		struct Preset
+		{
+			void restoreFromValueTree(const ValueTree& v);
+
+			ValueTree exportAsValueTree() const;
+
+			InvertableParameterRange nr;
+			String id;
+			int index;
+			String textConverter;
+		};
+
+		Array<Preset> presets;
+	};
 
 private:
 	static Identifier ri(IdSet set, RangeIdentifier r)
