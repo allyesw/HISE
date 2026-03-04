@@ -270,6 +270,7 @@ std::map<juce::Identifier, std::map<String, String>> HiseAssetInstaller::getPrep
 	};
 
 	std::map<Identifier, std::map<String, String>> rv;
+	int idx = 0;
 
 	for (auto& key : keys)
 	{
@@ -839,7 +840,7 @@ bool HiseAssetInstaller::FileInstallAction::perform()
 					if(ok)
 						patchFile.deleteFile();
 				}
-				catch(LineDiff::MergeError&)
+				catch(LineDiff::MergeError& me)
 				{
 					return false;
 				}
@@ -905,7 +906,7 @@ LineDiff::HashedDiff::Ptr HiseAssetInstaller::FileInstallAction::getDiffReport()
 		zstd::ZDefaultCompressor comp;
 
 		juce::MemoryBlock mb;
-		mb.fromBase64Encoding(b64Content);
+		auto ok = mb.fromBase64Encoding(b64Content);
 
 		String content;
 

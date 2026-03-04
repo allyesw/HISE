@@ -72,6 +72,8 @@ juce::NormalisableRange<double> dynamic_expression::graph::getXRange()
 		return NormalisableRange<double>(-1.0, 1.0);
 	else
 		return getParameterRange(0).rng;
+    
+    return {0.0, 1.0};
 }
 
 double dynamic_expression::graph::getInputValue()
@@ -80,6 +82,8 @@ double dynamic_expression::graph::getInputValue()
 		return expr->lastInput;
 	else 
 		return getParameter(0);
+    
+    return 0.0;
 }
 
 float dynamic_expression::graph::getValue(double x)

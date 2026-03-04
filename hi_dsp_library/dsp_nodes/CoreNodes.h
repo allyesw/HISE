@@ -1564,8 +1564,10 @@ public:
 
 			uiData.uptimeDelta = newUptimeDelta;
 
-			for (auto& d : voiceData)
+			voiceData.forEachCurrentVoice([newUptimeDelta](OscData& d)
+			{
 				d.uptimeDelta = newUptimeDelta;
+			});
 		}
 	}
 
@@ -1590,8 +1592,10 @@ public:
 
 		uiData.phase = v;
 
-		for (auto& d : voiceData)
+		voiceData.forEachCurrentVoice([v](OscData& d)
+		{
 			d.phase = v;
+		});
 
 		sendDisplayUpdateMessage(0.0f);
 	}
@@ -1600,8 +1604,10 @@ public:
 	{
 		uiData.gain = gain;
 
-		for (auto& d : voiceData)
+		voiceData.forEachCurrentVoice([gain](OscData& d)
+		{
 			d.gain = gain;
+		});
 
 		sendDisplayUpdateMessage(0.0, true);
 	}
@@ -1610,8 +1616,10 @@ public:
 	{
 		auto pitchMultiplier = newMultiplier;
 
-		for (auto& d : voiceData)
+		voiceData.forEachCurrentVoice([pitchMultiplier](OscData& d)
+		{
 			d.multiplier = pitchMultiplier;
+		});
 
 		uiData.multiplier = pitchMultiplier;
 
@@ -1638,6 +1646,8 @@ public:
 	double freqValue = 220.0;
 	
 	float currentNyquistGain = 1.0f;
+
+	SN_VOICE_SETTER(oscillator, voiceData);
 
 };
 
@@ -1706,18 +1716,15 @@ template <int NV> struct file_player : public data::base,
         {
             if (mode != PlaybackModes::MidiFreq)
             {
-                // Manual lock required here because reset() is called directly
-                // from prepare(), startVoice(), and setPlaybackMode().
-                if (auto dt = DataTryReadLock(this))
-                {
-                    auto& cd = currentXYZSample.get();
-                    HiseEvent e(HiseEvent::Type::NoteOn, 64, 1, 1);
+                auto& cd = *currentXYZSample.begin();
 
-                    if (this->externalData.getStereoSample(cd, e))
-                        s.uptimeDelta = cd.getPitchFactor();
-                }
+                HiseEvent e(HiseEvent::Type::NoteOn, 64, 1, 1);
 
-                // Always reset playback position, regardless of lock status
+                if (this->externalData.getStereoSample(cd, e))
+                    s.uptimeDelta = cd.getPitchFactor();
+
+                
+
                 s.uptime = 0.0;
             }
         }
@@ -1748,8 +1755,6 @@ template <int NV> struct file_player : public data::base,
 
     template <int C> void processFix(ProcessData<C>& data)
     {
-        // Acquire read lock for external audio data access.
-        // If lock fails (data being updated), skip this buffer.
         if (auto dt = DataTryReadLock(this))
         {
             auto& s = getCurrentAudioSample();
@@ -1758,6 +1763,7 @@ template <int NV> struct file_player : public data::base,
             {
                 auto fd = data.toFrameData();
 
+                
                 auto maxIndex = (double)s.data[0].size();
 
                 if (mode == PlaybackModes::SignalInput)
@@ -1770,6 +1776,7 @@ template <int NV> struct file_player : public data::base,
                 }
                 else
                 {
+
                     using IndexType = index::unscaled<double, index::looped<0>>;
 
                     IndexType i(state.get().uptime);
@@ -1786,18 +1793,9 @@ template <int NV> struct file_player : public data::base,
                 for (auto& ch : data)
                 {
                     auto b = data.toChannelData(ch);
-                    FloatVectorOperations::clear(b.begin(), b.size());
+                        FloatVectorOperations::clear(b.begin(), b.size());
                 }
-            }
-        }
-        else if (mode == PlaybackModes::SignalInput)
-        {
-            // Lock not acquired, still clear output to avoid garbage
-            for (auto& ch : data)
-            {
-                auto b = data.toChannelData(ch);
-                FloatVectorOperations::clear(b.begin(), b.size());
-            }
+            };
         }
     }
 
@@ -1855,7 +1853,6 @@ template <int NV> struct file_player : public data::base,
 
     template <typename FrameDataType> void processFrame(FrameDataType& data) noexcept
     {
-        // Acquire read lock for external audio data access.
         if (auto dt = DataTryReadLock(this))
         {
             auto& cd = getCurrentAudioSample().data;
@@ -1895,11 +1892,6 @@ template <int NV> struct file_player : public data::base,
             }
             }
         }
-        else
-        {
-            // Lock not acquired, output silence
-            data = 0.0f;
-        }
     }
 
     void handleHiseEvent(HiseEvent& e)
@@ -1910,21 +1902,12 @@ template <int NV> struct file_player : public data::base,
 
             if (e.isNoteOn())
             {
-                // Acquire read lock for external audio data access.
-                if (auto dt = DataTryReadLock(this))
-                {
-                    auto& cd = getCurrentAudioSample();
+                auto& cd = getCurrentAudioSample();
 
-                    if (this->externalData.getStereoSample(cd, e))
-                        s.uptimeDelta = cd.getPitchFactor();
-                    else
-                        s.uptimeDelta = e.getFrequency() / rootFreq;
-                }
+                if (this->externalData.getStereoSample(cd, e))
+                    s.uptimeDelta = cd.getPitchFactor();
                 else
-                {
-                    // Lock not acquired, use frequency-based pitch
                     s.uptimeDelta = e.getFrequency() / rootFreq;
-                }
 
                 s.uptime = 0.0;
             }
@@ -2007,7 +1990,6 @@ private:
 
     PolyData<OscData, NumVoices> state;
     PrepareSpecs lastSpecs;
-
 };
 
 class fm : public HiseDspBase
@@ -2080,7 +2062,6 @@ private:
 	PolyData<double, NUM_POLYPHONIC_VOICES> modGain;
 
 	SharedResourcePointer<SineLookupTable<2048>> sinTable;
-
 };
 
 template <int V> class gain : public HiseDspBase,
@@ -2222,7 +2203,6 @@ public:
 	double resetValue = 0.0;
 
 	PolyData<sfloat, NumVoices> gainer;
-
 };
 
 template <int NV> class smoother: public mothernode,

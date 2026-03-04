@@ -135,8 +135,9 @@ struct HiseJavascriptEngine::RootObject::ApiCall : public Expression
 			catch (String& error)
 			{
 				throw Error::fromLocation(l, error);
-				RETURN_IF_NO_THROW(var());
 			}
+
+			return var();
 		}
 
 	private:
@@ -1017,9 +1018,9 @@ struct HiseJavascriptEngine::RootObject::CallbackParameterReference: public Expr
 	var* data;
 };
 
-struct HiseJavascriptEngine::RootObject::CallbackLocalStatement : public Expression
+struct HiseJavascriptEngine::RootObject::CallbackLocalStatement : public Statement
 {
-	CallbackLocalStatement(const CodeLocation& l, Callback* parentCallback_) noexcept : Expression(l), parentCallback(parentCallback_) {}
+	CallbackLocalStatement(const CodeLocation& l, Callback* parentCallback_) noexcept : Statement(l), parentCallback(parentCallback_) {}
 
 	ResultCode perform(const Scope& s, var*) const override
 	{

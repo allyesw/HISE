@@ -474,11 +474,7 @@ struct flex_ahdsr_base: public SimpleRingBuffer::WriterBase
 
 		static float getYAt(const Path& p, float xPos)
 		{
-			auto size = jmax<float>(p.getBounds().getWidth(), p.getBounds().getHeight());
-
-			auto tolerance = jmin(size / 100.0f, Path::defaultToleranceForMeasurement);
-
-			PathFlatteningIterator i (p, {}, tolerance);
+			PathFlatteningIterator i (p, {});
 
 		    while (i.next())
 		    {

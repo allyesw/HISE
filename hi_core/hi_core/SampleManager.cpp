@@ -52,7 +52,7 @@ MainController::SampleManager::SampleManager(MainController *mc_) :
 	preloadFlag(false),
 	pendingFunctions(8192)
 {
-	ThreadStarters::startRealtime(samplerLoaderThreadPool);
+    samplerLoaderThreadPool->startThread(9);
 }
 
 

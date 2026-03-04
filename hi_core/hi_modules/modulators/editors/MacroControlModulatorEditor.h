@@ -36,7 +36,7 @@ namespace hise { using namespace juce;
 */
 class MacroControlModulatorEditorBody  : public ProcessorEditorBody,
                                          public ButtonListener,
-                                         public Slider::Listener,
+                                         public SliderListener,
                                          public ComboBoxListener
 {
 public:

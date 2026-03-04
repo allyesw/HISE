@@ -489,8 +489,7 @@ public:
 
 	enum PartSize
 	{
-		Empty = 0,
-		HalfGig,
+		HalfGig = 0,
 		OneGig,
 		OneAndHalfGig,
 		TwoGig,

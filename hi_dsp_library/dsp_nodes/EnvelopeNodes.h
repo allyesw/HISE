@@ -666,6 +666,8 @@ template <int NV, typename ParameterType> struct simple_ar: public pimpl::envelo
 		}
 	}
 
+	
+	
 	PolyData<State, NumVoices> states;
 };
 
@@ -1172,12 +1174,7 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			memset(data.data(), 0, sizeof(data));
 
 			for(auto& s: data)
-			{
-				s.timeModValue = 1.0f;
-				s.levelModValue = 1.0f;
 				s.curve.set(1.0);
-			}
-				
 
 			set<State::DECAY, ParameterType::Level>(0.5);
 			set<State::SUSTAIN, ParameterType::Level>(0.5);
@@ -1282,9 +1279,9 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			switch(T)
 			{
 			case ParameterType::Time:
-				return v.time * v.timeModValue;
+				return v.time;
 			case ParameterType::Level:
-				return v.level.advance() * v.levelModValue;
+				return v.level.advance();
 			case ParameterType::Curve:
 				return v.curve.advance();
 			default:
@@ -1299,17 +1296,6 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			{
 				data[i].prepare(sampleRate, 20.0);
 			}
-		}
-
-		template <State S, ParameterType T> void setModulationValue(float newValue)
-		{
-			jassert(newValue >= 0.0f && newValue <= 1.0f);
-			auto& s = data[(int)S];
-
-			if (T == ParameterType::Level)
-				s.levelModValue = newValue;
-			else
-				s.timeModValue = newValue;
 		}
 
 		bool isStaticState()
@@ -1429,8 +1415,6 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			sfloat curve;
 			float time = 0.0f;
 			sfloat level;
-			float timeModValue = 0.0f;
-			float levelModValue = 0.0f;
 		};
 
 		Mode m = Mode::Note;
@@ -1888,9 +1872,6 @@ template <int NV, typename IndexClass, runtime_target::RuntimeTarget TargetType>
 		check();
 	}
 
-	// note: never use this directly outside of the usual HISE callback system
-	// use the isPlaying() function instead, this gets you the state for the currently
-	// rendered voice
 	bool handleModulation(double& v)
 	{
 		return mv.getChangedValue(v);
@@ -1901,14 +1882,10 @@ template <int NV, typename IndexClass, runtime_target::RuntimeTarget TargetType>
 		check();
 	}
 
-	bool check()
+	void check()
 	{
-		auto isPlaying = state.get().isPlaying();
-
-		if(!isPlaying)
+		if(!state.get().isPlaying())
 			mv.setModValue(0.0);
-
-		return isPlaying;
 	}
 
 	virtual void prepare(PrepareSpecs ps)
@@ -1964,6 +1941,7 @@ template <int NV, typename IndexClass, runtime_target::RuntimeTarget TargetType>
 
 public:
 
+	SN_VOICE_SETTER(mod_voice_checker_base, state);
 };
 
 template <int NV, typename IndexClass=runtime_target::indexers::fix_hash<1>> struct global_mod_gate : 

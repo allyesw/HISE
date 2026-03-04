@@ -320,7 +320,7 @@ public:
 		*/
 		bool hasVisibleItems() const;
 
-		virtual int getHeightForCollection() const;
+		int getHeightForCollection() const;
 
 		void resized() override;
 

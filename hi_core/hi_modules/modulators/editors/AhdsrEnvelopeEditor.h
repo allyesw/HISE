@@ -51,7 +51,7 @@ class AhdsrEnvelopeEditor;
 */
 class AhdsrEnvelopeEditor  : public ProcessorEditorBody,
                              public Timer,
-                             public Slider::Listener
+                             public SliderListener
 {
 public:
     //==============================================================================

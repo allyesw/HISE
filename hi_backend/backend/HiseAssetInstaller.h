@@ -83,13 +83,13 @@ struct HiseAssetInstaller: public ControlledObject
 					if (File::isAbsolutePath(path))
 					{
 						if (auto info = HiseAssetInstaller::UninstallInfo(File(path)))
-							assets.push_back(info);
+							assets.add(info);
 					}
 				}
 			}
 
-			const UninstallInfo* begin() const { return assets.data(); }
-			const UninstallInfo* end() const { return assets.data() + assets.size(); }
+			const UninstallInfo* begin() const { return assets.begin(); }
+			const UninstallInfo* end() const { return assets.end(); }
 
 			File getLocalAssetFile()
 			{
@@ -106,7 +106,7 @@ struct HiseAssetInstaller: public ControlledObject
 				getLocalAssetFile().replaceWithText(JSON::toString(var(newList), false));
 			}
 
-			std::vector<UninstallInfo> assets;
+			Array<UninstallInfo> assets;
 		};
 
 		enum class Mode
@@ -387,11 +387,14 @@ private:
 				c->setAttribute("value", nv.value.toString());
 			}
 
-			if(projectInfo.replaceWithText(xml->createDocument("")))
-				dynamic_cast<GlobalSettingManager*>(getMainController())->getSettingsObject().refreshProjectData();
+			auto ok = projectInfo.replaceWithText(xml->createDocument(""));
+
+			dynamic_cast<GlobalSettingManager*>(getMainController())->getSettingsObject().refreshProjectData();
 
 			return true;
 		}
+
+		
 
 		bool perform() override
 		{

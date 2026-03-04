@@ -236,7 +236,7 @@ void PluginParameterRamp::setCurrentInfo(const PluginParameterSimulatorInfo& new
 		stop();
 
 	if(useThread)
-		ThreadStarters::startHigh(this);
+		startThread(8);
 	else
 		stopThread(1000);
 
@@ -267,11 +267,10 @@ void PluginParameterRamp::bump(PluginParameterSimulatorInfo& info, double milliS
 	info.performChange();
 }
 
-BackendProcessor::BackendProcessor(AudioDeviceManager *deviceManager_/*=nullptr*/, AudioProcessorPlayer *callback_/*=nullptr*/) :
+	BackendProcessor::BackendProcessor(AudioDeviceManager *deviceManager_/*=nullptr*/, AudioProcessorPlayer *callback_/*=nullptr*/) :
   MainController(),
   AudioProcessorDriver(deviceManager_, callback_),
   scriptUnlocker(this),
-  autosaver(this),
   pluginParameterRamp(this)
 {
 	//printData();
@@ -300,24 +299,7 @@ BackendProcessor::BackendProcessor(AudioDeviceManager *deviceManager_/*=nullptr*
 		restoreGlobalSettings(this);
 	}
 
-	if (CompileExporter::isUsingWorkingDirectoryAsProjectFolder())
-	{
-		try
-		{
-			GET_PROJECT_HANDLER(synthChain).setWorkingProject(CompileExporter::getCurrentWorkDirectory());
-		}
-		catch (Result& r)
-		{
-			GET_PROJECT_HANDLER(synthChain).restoreWorkingProjects();
-			jassertfalse;
-		}
-		
-	}
-	else
-	{
-		GET_PROJECT_HANDLER(synthChain).restoreWorkingProjects();
-	}
-	
+	GET_PROJECT_HANDLER(synthChain).restoreWorkingProjects();
 
 	initData(this);
 
@@ -335,8 +317,7 @@ BackendProcessor::BackendProcessor(AudioDeviceManager *deviceManager_/*=nullptr*
 
 	if (!inUnitTestMode())
 	{
-		getAutoSaver().initialise();
-		
+		getAutoSaver().updateAutosaving();
 	}
 	
 	clearPreset(dontSendNotification);
@@ -952,7 +933,7 @@ hise::JavascriptProcessor* BackendProcessor::createInterface(int width, int heig
 
 	String code = "Content.makeFrontInterface(" + String(width) + ", " + String(width) + ");";
 
-	jsp->getSnippet(0)->replaceContentAsync(code, false);
+	jsp->getSnippet(0)->replaceContentAsync(code);
 	jsp->compileScript();
 
 	midiChain->getHandler()->add(s, nullptr);

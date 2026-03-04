@@ -2316,7 +2316,6 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
 			LineBreaks,
             AutoAutocomplete,
             ShowStickyLines,
-            EnableCmdScrollFontResize,
 			BackgroundParsing,
             FixWeirdTab,
 			Preprocessor,
@@ -2349,7 +2348,6 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
 		menu.addItem(LineBreaks, "Enable line breaks", true, linebreakEnabled);
         menu.addItem(AutoAutocomplete, "Autoshow Autocomplete", true, showAutocompleteAfterDelay);
         menu.addItem(ShowStickyLines, "Show sticky lines on top", true, showStickyLines);
-        menu.addItem(EnableCmdScrollFontResize, "Enable Cmd+Scroll font resize", true, enableCmdScrollFontResize);
         
 		menu.addSeparator();
 
@@ -2391,9 +2389,6 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
                 break;
             case ShowStickyLines:
                 FullEditor::saveSetting(this, TextEditorSettings::ShowStickyLines, !showStickyLines);
-                break;
-            case EnableCmdScrollFontResize:
-                FullEditor::saveSetting(this, TextEditorSettings::EnableCmdScrollFontResize, !enableCmdScrollFontResize);
                 break;
         }
 
@@ -2560,7 +2555,7 @@ void mcl::TextEditor::mouseDoubleClick (const MouseEvent& e)
 
 void mcl::TextEditor::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& d)
 {
-	if (e.mods.isCommandDown() && enableCmdScrollFontResize)
+	if (e.mods.isCommandDown())
 	{
 		auto factor = 1.0f + (float)d.deltaY / 5.0f;
 
@@ -3299,65 +3294,54 @@ bool mcl::TextEditor::keyPressed (const KeyPress& key)
 
 	if (keyMatchesId(key, TextEditorShortcuts::comment_line)) // "Cmd + #"
 	{
-		// Collect all unique line numbers from all selections
-		SparseSet<int> linesToProcess;
+		bool anythingCommented = false;
+		bool anythingUncommented = false;
 
 		for (auto s : document.getSelections())
 		{
-			auto oriented = s.oriented();
-			for (int line = oriented.head.x; line <= oriented.tail.x; line++)
-			{
-				linesToProcess.addRange({line, line + 1});
-			}
+			auto thisOne = languageManager->isLineCommented(document, s);
+
+			anythingCommented |= thisOne;
+			anythingUncommented |= !thisOne;
 		}
 
-		if (linesToProcess.isEmpty())
+		if (anythingUncommented && anythingCommented)
 			return false;
 
-		// Check non-empty lines with Visual Studio Code behaviour:
-		// If ANY line is not commented → comment ALL lines
-		// If ALL lines are commented → uncomment ALL lines
-		bool hasUncommentedLine = false;
+		Array<CodeDocument::Position> positions;
 
-		for (int i = 0; i < linesToProcess.getNumRanges(); i++)
+		for (auto s : document.getSelections())
 		{
-			auto range = linesToProcess.getRange(i);
-			for (int line = range.getStart(); line < range.getEnd(); line++)
-			{
-				if (!document.getLine(line).containsNonWhitespaceChars())
-					continue;
-
-				Selection lineSelection(line, 0, line, 0);
-				if (!languageManager->isLineCommented(document, lineSelection))
-				{
-					hasUncommentedLine = true;
-					break;
-				}
-			}
-			if (hasUncommentedLine)
-				break;
+			positions.add(s.toCodePosition(document.getCodeDocument()));
 		}
 
-		// Save original selections for restoration
-		Array<Selection> originalSelections = document.getSelections();
+		for (auto& p : positions)
+			p.setPositionMaintained(true);
 
-		// Process each line (toggleCommentForLine skips empty lines internally)
-		bool shouldComment = hasUncommentedLine;
+		nav({}, TextDocument::Target::line, TextDocument::Direction::forwardCol);
+		nav({}, TextDocument::Target::firstnonwhitespace, TextDocument::Direction::backwardCol);
 
-		for (int i = 0; i < linesToProcess.getNumRanges(); i++)
+		if (anythingUncommented)
 		{
-			auto range = linesToProcess.getRange(i);
-			for (int line = range.getStart(); line < range.getEnd(); line++)
-			{
-				Selection lineSel(line, 0, line, 0);
-				document.setSelections({lineSel}, false);
-				nav({}, TextDocument::Target::line, TextDocument::Direction::forwardCol);
-				nav({}, TextDocument::Target::firstnonwhitespace, TextDocument::Direction::backwardCol);
-				languageManager->toggleCommentForLine(this, shouldComment);
-			}
+			languageManager->toggleCommentForLine(this, true);
+
+			
+		}
+		else
+		{
+			languageManager->toggleCommentForLine(this, false);
+
+			
 		}
 
-		document.setSelections(originalSelections, false);
+		Array<Selection> newSelection;
+
+		for (auto p : positions)
+		{
+			newSelection.add(Selection::fromCodePosition(p));
+		}
+
+		document.setSelections(newSelection, false);
 		return true;
 	}
     if (key == KeyPress ('x', ModifierKeys::commandModifier, 0))

@@ -2782,7 +2782,7 @@ struct ModulationDisplayValue
 		virtual ~QueryFunction() {}
 
 		virtual bool onScaleDrag(Processor* p, bool isDown, float delta) = 0;
-		virtual ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr, int sourceIndex) const = 0;
+		virtual ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr) const = 0;
 		
 		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QueryFunction);
 	};
@@ -2908,11 +2908,9 @@ struct ValueToTextConverter
 	{
 		static String Frequency(double input)
 		{
-			auto absValue = std::abs(input);
-
-			if (absValue < 30.0f)
+			if (input < 30.0f)
 				return String(input, 1) + " Hz";
-			else if (absValue < 1000.0f)
+			else if (input < 1000.0f)
 				return String(roundToInt(input)) + " Hz";
 			else
 				return String(input / 1000.0, 1) + " kHz";
@@ -2963,7 +2961,7 @@ struct ValueToTextConverter
 			if(v > 0.0)
 				s << '+';
 
-			if(std::fmod(std::abs(v+0.005), 1.0) < 0.01)
+			if(std::fmod(std::abs(v), 1.0) < 0.001)
 				s << String(roundToInt(v));
 			else
 				s << String(v, 2);

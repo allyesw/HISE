@@ -84,8 +84,6 @@ struct Helpers
 		Pitch1Octave,
 		Pitch2Octaves,
 		Pitch1Semitone,
-		PitchOctaveStep,
-		PitchSemitoneStep,
 		FilterFreq,
 		FilterFreqLog,
 		Stereo,
@@ -142,7 +140,7 @@ struct Helpers
 
 		std::map<String, DefaultInitValue> initValues;
 		std::map<String, RangeData> rangeData;
-		bool selectableSources = false;
+		bool selectableSources = true;
 
 		LambdaBroadcaster<Properties*, String> propertyUpdateBroadcaster;
 	};

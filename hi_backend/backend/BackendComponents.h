@@ -48,7 +48,7 @@ class MacroParameterTable;
 class MacroComponent: public Component,
 					  public ButtonListener,
 					  public Processor::OtherListener,
-					  public Slider::Listener,
+					  public SliderListener,
 					  public LabelListener
 {
 public:
@@ -469,7 +469,7 @@ public:
 private:
 
 	class ValueSliderColumn: public Component,
-						public Slider::Listener
+						public SliderListener
 	{
 	public:
 		ValueSliderColumn(MacroParameterTable &table):

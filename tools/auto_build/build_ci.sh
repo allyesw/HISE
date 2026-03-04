@@ -6,9 +6,9 @@ cd ..
 # This is the project folder for the Standalone app
 standalone_folder="projects/standalone"
 
-chmod +x "JUCE/projucer/Projucer.app/Contents/MacOS/Projucer"
+chmod +x "tools/Projucer/Projucer.app/Contents/MacOS/Projucer"
 
-"JUCE/projucer/Projucer.app/Contents/MacOS/Projucer" --resave "projects/standalone/HISE Standalone.jucer"
+"tools/Projucer/Projucer.app/Contents/MacOS/Projucer" --resave "projects/standalone/HISE Standalone.jucer"
 
 echo "Compiling Standalone App..."
 

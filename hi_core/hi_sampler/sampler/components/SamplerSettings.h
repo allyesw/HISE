@@ -39,7 +39,7 @@
 class SamplerSettings  : public Component,
                          public Timer,
                          public LabelListener,
-                         public Slider::Listener
+                         public SliderListener
 {
 public:
     //==============================================================================

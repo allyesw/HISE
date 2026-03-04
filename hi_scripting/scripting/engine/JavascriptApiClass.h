@@ -135,8 +135,7 @@ struct VarTypeChecker
             case Object: return VarTypeIdentifiers::Object;
             case Function: return VarTypeIdentifiers::Function;
             case ComplexType: return VarTypeIdentifiers::ComplexType;
-						case NotUndefined: return VarTypeIdentifiers::NotUndefined;
-						default: jassertfalse; return "Unknown";
+            default: jassertfalse; return "Unknown";
         }
     }
     

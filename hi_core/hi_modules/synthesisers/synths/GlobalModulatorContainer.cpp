@@ -32,52 +32,68 @@
 
 namespace hise { using namespace juce;
 
-void GlobalModulatorContainer::GlobalModulatorCable::send(int voiceIndex, bool isEnvelope /*= false*/, int startSample /*= 0*/)
+struct GlobalModulatorContainer::GlobalModulatorCable
 {
-	if (auto c = cable.getObject())
-	{
-		auto cable = static_cast<scriptnode::routing::GlobalRoutingManager::Cable*>(c);
+    WeakReference<Modulator> mod;
+    var cable;
+    
+	
 
-		double modValue = 1.0;
-
-		if (voiceIndex == -1)
-		{
-			if (auto m = static_cast<TimeVariantModulator*>(mod.get()))
+    void send(int voiceIndex, bool isEnvelope=false, int startSample=0)
+    {
+        if (auto c = cable.getObject())
+        {
+            auto cable = static_cast<scriptnode::routing::GlobalRoutingManager::Cable*>(c);
+            
+            double modValue = 1.0;
+            
+            if(voiceIndex == -1)
+            {
+                if(auto m = static_cast<TimeVariantModulator*>(mod.get()))
+                {
+                    modValue = m->getLastConstantValue();
+                }
+            }
+			else if (isEnvelope)
 			{
-				modValue = m->getLastConstantValue();
-			}
-		}
-		else if (isEnvelope)
-		{
-			auto gs = dynamic_cast<GlobalModulatorContainer*>(mod->getParentProcessor(true));
+				auto gs = dynamic_cast<GlobalModulatorContainer*>(mod->getParentProcessor(true));
 
-			auto ev = static_cast<ModulatorSynthVoice*>(gs->getVoice(voiceIndex))->getCurrentHiseEvent();
+				auto ev = static_cast<ModulatorSynthVoice*>(gs->getVoice(voiceIndex))->getCurrentHiseEvent();
 
-			if (!mod->isBypassed())
-			{
-				auto idx = gs->getEnvelopeIndex(mod);
-
-				if (auto data = gs->getEnvelopeValuesForModulator(idx, startSample, ev))
+				if(!mod->isBypassed())
 				{
-					modValue = *data;
-				}
-				else
-				{
-					return;
-				}
-			}
-		}
-		else
-		{
-			if (auto m = static_cast<VoiceStartModulator*>(mod.get()))
-			{
-				modValue = m->getVoiceStartValue(voiceIndex);
-			}
-		}
+					auto idx = gs->getEnvelopeIndex(mod);
 
-		cable->sendValue(nullptr, modValue);
-	}
-}
+					if (auto data = gs->getEnvelopeValuesForModulator(idx, startSample, ev))
+					{
+						modValue = *data;
+					}
+					else
+					{
+						return;
+					}
+				}
+			}
+			else
+            {
+                if(auto m = static_cast<VoiceStartModulator*>(mod.get()))
+                {
+                    modValue = m->getVoiceStartValue(voiceIndex);
+                }
+            }
+            
+            cable->sendValue(nullptr, modValue);
+        }
+        
+        
+    }
+    
+    bool operator==(const GlobalModulatorCable& other) const
+    {
+        return other.mod == mod &&
+               cable == other.cable;
+    }
+};
 
 GlobalModulatorContainer::GlobalModulatorContainer(MainController *mc, const String &id, int numVoices) :
   ModulatorSynth(mc, id, numVoices),
@@ -125,7 +141,6 @@ GlobalModulatorContainer::GlobalModulatorContainer(MainController *mc, const Str
 	gainChain->getHandler()->addListener(this);
 
 	dragBroadcaster.setEnableQueue(true);
-	currentMatrixSourceBroadcaster.sendMessage(dontSendNotification, -1);
 }
 
 GlobalModulatorContainer::~GlobalModulatorContainer()

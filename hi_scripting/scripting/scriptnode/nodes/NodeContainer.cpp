@@ -104,7 +104,7 @@ void NodeContainer::addFixedParameters()
 		auto ndb = new parameter::dynamic_base(p.callback);
 
 		newP->setDynamicParameter(ndb);
-		newP->valueNames = p.getParameterNames().toStringArray();
+		newP->valueNames = p.parameterNames;
 
 		an->addParameter(newP);
 	}

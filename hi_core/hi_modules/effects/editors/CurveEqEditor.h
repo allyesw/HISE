@@ -200,7 +200,7 @@ class CurveEqEditor  : public ProcessorEditorBody,
                        public FilterTypeSelector::Listener,
 					   public FilterDragOverlay::Listener,
                        public ButtonListener,
-                       public Slider::Listener
+                       public SliderListener
 {
 public:
     //==============================================================================

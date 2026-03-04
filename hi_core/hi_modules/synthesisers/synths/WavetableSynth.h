@@ -208,8 +208,6 @@ public:
 
 	void startNote (int midiNoteNumber, float /*velocity*/, SynthesiserSound* s, int /*currentPitchWheelPosition*/) override;;
 
-	void resetVoice() override;
-
 	void calculateBlock(int startSample, int numSamples) override;;
 
 	void setRefreshMipmap(bool refreshMipmap_)
@@ -861,15 +859,6 @@ public:
 	void renderNextBlockWithModulators(AudioSampleBuffer& outputAudio, const HiseEventBuffer& inputMidi) override
 	{
 		ModulatorSynth::renderNextBlockWithModulators(outputAudio, inputMidi);
-
-		if(getNumActiveVoices() == 0)
-		{
-			auto dv = getAttribute(SpecialParameters::TableIndexValue);
-			auto mv = modChains[(int)ChainIndex::TableIndex].getOneModulationValue(0);
-			dv *= mv;
-			jlimit(0.0f, 1.0f, dv);
-			setDisplayTableValue(dv);
-		}
 	}
 
 	void setResynthesisOptions(const WavetableHelpers::ResynthesisOptions& options, NotificationType n=dontSendNotification)
@@ -935,12 +924,6 @@ public:
 		}
 
 		return {};
-	}
-
-	void resetModChains(int voiceIndex)
-	{
-		modChains[ChainIndex::TableIndex].resetVoice(voiceIndex);
-		modChains[ChainIndex::TableIndexBipolar].resetVoice(voiceIndex);
 	}
 
 private:

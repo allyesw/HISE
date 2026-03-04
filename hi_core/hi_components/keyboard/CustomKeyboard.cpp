@@ -70,10 +70,9 @@ CustomKeyboard::CustomKeyboard(MainController* mc_) :
 	state(&mc_->getKeyboardState()),
 	mc(mc_),
     narrowKeys(true),
-  lowKey(12),
-	currentKeyboardOctave(5)
+    lowKey(12)
 {
-	setKeyPressBaseOctave(currentKeyboardOctave);
+	setKeyPressBaseOctave(5);
 
 	state->addChangeListener(this);
    
@@ -196,33 +195,6 @@ void CustomKeyboard::mouseDrag(const MouseEvent& e)
 {
 	if (!toggleMode)
 		MidiKeyboardComponent::mouseDrag(e);
-}
-
-bool CustomKeyboard::keyPressed(const KeyPress& key)
-{
-	// Handle Z key - decrease octave
-	if (key.getKeyCode() == 'z' || key.getKeyCode() == 'Z')
-	{
-		if (currentKeyboardOctave > 0)
-		{
-			currentKeyboardOctave--;
-			setKeyPressBaseOctave(currentKeyboardOctave);
-		}
-		return true;
-	}
-	// Handle X key - increase octave
-	else if (key.getKeyCode() == 'x' || key.getKeyCode() == 'X')
-	{
-		if (currentKeyboardOctave < 10)
-		{
-			currentKeyboardOctave++;
-			setKeyPressBaseOctave(currentKeyboardOctave);
-		}
-		return true;
-	}
-
-	// Let the parent class handle other keys (including the awsedftgyhujkolp; note keys)
-	return MidiKeyboardComponent::keyPressed(key);
 }
 
 void CustomKeyboard::setUseCustomGraphics(bool shouldUseCustomGraphics)

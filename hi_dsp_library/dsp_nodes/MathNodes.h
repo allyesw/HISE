@@ -1050,7 +1050,9 @@ private:
 
     void clearFilterState()
     {
-        for (auto& voiceState : filterState.all())
+        typename decltype(filterState)::ScopedVoiceSetter scope(filterState, true);
+
+        for(auto& voiceState : filterState)
             voiceState.fill(0.0f);
     }
 

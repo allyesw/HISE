@@ -658,7 +658,7 @@ void FilterDragOverlay::updateFilters()
 
 	if (numFilters == 0)
 	{
-		filterGraph.refreshAsync();
+		filterGraph.repaint();
 	}
 }
 
@@ -1096,6 +1096,9 @@ void FilterDragOverlay::FilterDragComponent::mouseDrag(const MouseEvent& e)
 	jassert(xp == CurveEq::BandParameter::Freq);
 
 	xp = CurveEq::BandParameter::Freq;
+
+	float xvalue;
+	float yvalue;
 
 	if(yp == CurveEq::BandParameter::Q)
 	{

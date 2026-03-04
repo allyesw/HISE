@@ -43,56 +43,58 @@ ScriptingApiDatabase::Data::~Data()
 
 }
 
-hise::MarkdownDataBase::Item::Ptr ScriptingApiDatabase::ItemGenerator::createRootItem(MarkdownDataBase& parent)
+hise::MarkdownDataBase::Item ScriptingApiDatabase::ItemGenerator::createRootItem(MarkdownDataBase& parent)
 {
 	auto item = DirectoryItemGenerator::createRootItem(parent);
 
 	auto v = data->v;
-    auto c = item->getChildWithName("scripting-api");
+    auto c = item.getChildWithName("scripting-api");
 	auto scriptingApi = updateWithValueTree(c ,data->v);
 
-	scriptingApi->fillMetadataFromURL();
+	scriptingApi.fillMetadataFromURL();
 
-	item->swapChildWithName(scriptingApi, "scripting-api");
-	item->setDefaultColour(colour);
+	item.swapChildWithName(scriptingApi, "scripting-api");
+
+	item.setDefaultColour(colour);
 
 	return item;
 }
 
-hise::MarkdownDataBase::Item::Ptr ScriptingApiDatabase::ItemGenerator::updateWithValueTree(MarkdownDataBase::Item::Ptr item, ValueTree& v)
+hise::MarkdownDataBase::Item ScriptingApiDatabase::ItemGenerator::updateWithValueTree(MarkdownDataBase::Item& item, ValueTree& v)
 {
 	const static Identifier root("Api");
 	const static Identifier method("method");
 
 	if (v.getType() == root)
 	{
-		MarkdownDataBase::Item::List newItems;
+		Array<MarkdownDataBase::Item> newItems;
 
 		// Create all classes
 		for (auto c : v)
 		{
 			auto t = MarkdownLink::Helpers::getSanitizedFilename(c.getType().toString());
 
-			if (auto i = item->getChildWithName(t))
-			{
-				i->description << "API class reference: `" << c.getType().toString() << "`";
-				i->tocString = c.getType().toString();
-				i->url = rootUrl.getChildUrl(c.getType().toString());
+			MarkdownDataBase::Item i = item.getChildWithName(t);
 
-				newItems.add(updateWithValueTree(i, c));
+			if (!i)
+			{
+				i.description << "API class reference: `" << c.getType().toString() << "`";
+				i.tocString = c.getType().toString();
+				i.url = rootUrl.getChildUrl(c.getType().toString());
 			}
 			else
 			{
-				auto ni = MarkdownDataBase::Item::createNew();
-				ni->tocString = c.getType().toString();
-				ni->url = rootUrl.getChildUrl(c.getType().toString());
-
-				newItems.add(updateWithValueTree(ni, c));
+				i.tocString = c.getType().toString();
+				i.url = rootUrl.getChildUrl(c.getType().toString());
 			}
+
+			newItems.add(updateWithValueTree(i, c));
 		}
 
-		item->swapChildren(newItems);
+		item.swapChildren(newItems);
 	}
+
+	
 
 #if 0
 	if (v.getType() == root)
@@ -130,26 +132,36 @@ hise::MarkdownDataBase::Item::Ptr ScriptingApiDatabase::ItemGenerator::updateWit
 	if (v.getType() != method && v.getType() != root)
 	{
 
-		item->url.setType(MarkdownLink::Folder);
+		item.url.setType(MarkdownLink::Folder);
 
-		MarkdownDataBase::Item::List newChildren;
+		Array<MarkdownDataBase::Item> newChildren;
 
-		item->swapChildren(newChildren);
+		item.swapChildren(newChildren);
+
+#if 0
+		for(int i = 0; i < item.getNumChildren(); i++)
+		{
+			auto url = item[i].url;
+			
+			if (url.hasAnchor())
+				item.removeChild(i--);
+		}
+#endif
 
 		for (auto c : v)
 		{
-			auto i = MarkdownDataBase::Item::createNew();
+			MarkdownDataBase::Item i;
 
-			i->c = item->c;
+			i.c = item.c;
 			auto className = v.getType().toString();
-			i->tocString = c.getProperty("name").toString();
-			i->description << "`" << className << "." << i->tocString << "()`  ";
-			i->description << c.getProperty("description").toString();
-			i->url = rootUrl.getChildUrl(className).getChildUrl(c.getProperty("name").toString(), true);
-			item->addChild(i);
+			i.tocString = c.getProperty("name").toString();
+			i.description << "`" << className << "." << i.tocString << "()`  ";
+			i.description << c.getProperty("description").toString();
+			i.url = rootUrl.getChildUrl(className).getChildUrl(c.getProperty("name").toString(), true);
+			item.addChild(std::move(i));
 		}
 
-		item->sortChildren();
+		item.sortChildren();
 	}
 	else
 	{

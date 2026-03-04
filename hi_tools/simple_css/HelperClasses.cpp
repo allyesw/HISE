@@ -200,7 +200,6 @@ String Selector::toString() const
 	case SelectorType::ID: s << '#'; break;
 	case SelectorType::Element: s << "element(" << name << ")"; return s;
 	case SelectorType::AtRule: s << '@'; break;
-	case SelectorType::All: s << "*"; return s;
 	default: ;
 	}
 

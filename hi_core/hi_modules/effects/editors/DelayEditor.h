@@ -37,7 +37,7 @@ namespace hise { using namespace juce;
                                                                     //[/Comments]
 */
 class DelayEditor  : public ProcessorEditorBody,
-                     public Slider::Listener,
+                     public SliderListener,
                      public ButtonListener
 {
 public:

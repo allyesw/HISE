@@ -641,8 +641,7 @@ namespace ScriptedDrawActions
 		drawDropShadowFromPath(const Path& p_, Rectangle<float> a, Colour colour, int radius, Point<int> offset) :
 			p(p_)
 		{
-			if(!p.getBounds().isEmpty())
-				p.scaleToFit(a.getX(), a.getY(), a.getWidth(), a.getHeight(), false);
+            p.scaleToFit(a.getX(), a.getY(), a.getWidth(), a.getHeight(), false);
             
 			shadow.setColor(colour);
 			shadow.setRadius(radius);
@@ -651,8 +650,7 @@ namespace ScriptedDrawActions
 
 		void perform(Graphics& g) override
 		{
-			if(!p.getBounds().isEmpty())
-				shadow.render(g, p);
+			shadow.render(g, p);
 		}
 
 		ShadowType shadow;

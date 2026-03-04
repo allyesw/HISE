@@ -139,6 +139,8 @@ public:
 
 	PolyData<FilterObject, NumVoices> filter;
 
+	SN_VOICE_SETTER(FilterNodeBase, filter);
+
 	double sr = -1.0;
 	bool enabled = true;
 

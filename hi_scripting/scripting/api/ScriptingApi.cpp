@@ -1,4 +1,3 @@
-#include "ScriptingApi.h"
 /*  ===========================================================================
 *
 *   This file is part of HISE.
@@ -181,14 +180,6 @@ var ApiHelpers::convertStyleSheetProperty(const var& value, const String& type)
 	else if(type == "color")
 	{
 		return var(String("#") + ApiHelpers::getColourFromVar(value).toDisplayString(true));
-	}
-	else if(type == "%")
-	{
-		return var(String((double)value * 100.0) + "%");
-	}
-	else if(type == "px" || type == "em" || type == "vh" || type == "deg")
-	{
-		return var(String((double)value) + type);
 	}
 
 	return value;
@@ -5833,7 +5824,7 @@ void ScriptingApi::Synth::setMacroControl(int macroIndex, float newValue)
 {
 	if(ModulatorSynthChain *chain = dynamic_cast<ModulatorSynthChain*>(owner))
 	{
-		if(macroIndex > 0 && macroIndex < 9)
+		if(macroIndex > 0 && macroIndex < 8)
 		{
 			chain->setMacroControl(macroIndex - 1, newValue, sendNotification);
 		}
@@ -6649,12 +6640,10 @@ struct ScriptingApi::Console::Wrapper
 	API_VOID_METHOD_WRAPPER_1(Console, assertIsObjectOrArray);
 	API_VOID_METHOD_WRAPPER_1(Console, assertLegalNumber);
 	API_VOID_METHOD_WRAPPER_1(Console, assertNoString);
-	API_VOID_METHOD_WRAPPER_2(Console, assertWithMessage);
 	API_VOID_METHOD_WRAPPER_0(Console, breakInDebugger);
 	API_VOID_METHOD_WRAPPER_0(Console, blink);
 	API_VOID_METHOD_WRAPPER_1(Console, startSampling);
 	API_VOID_METHOD_WRAPPER_2(Console, sample);
-	API_VOID_METHOD_WRAPPER_3(Console, testCallback);
 };
 
 ScriptingApi::Console::Console(ProcessorWithScriptingContent *p) :
@@ -6674,13 +6663,11 @@ startTime(0.0)
 	ADD_API_METHOD_1(assertIsDefined);
 	ADD_API_METHOD_1(assertIsObjectOrArray);
 	ADD_API_METHOD_1(assertLegalNumber);
-	ADD_API_METHOD_2(assertWithMessage);
 
 	ADD_API_METHOD_0(breakInDebugger);
 	ADD_API_METHOD_1(assertNoString);
 	ADD_API_METHOD_1(startSampling);
 	ADD_API_METHOD_2(sample);
-	ADD_API_METHOD_3(testCallback);
 
 	consoleProfile.setSourceType(DebugSession::ProfileDataSource::SourceType::Trace);
 	consoleProfile.setHolder(dynamic_cast<JavascriptProcessor*>(p), true);
@@ -6828,11 +6815,7 @@ void ScriptingApi::Console::assertEqual(var v1, var v2)
 	ignoreUnused(suspender);
 
 	if (v1 != v2)
-	{
-		String error;
-		error << "Assertion failure: " << v1.toString() << " != " << v2.toString();
-		reportScriptError(error);
-	}
+		reportScriptError("Assertion failure: values are unequal");
 }
 
 void ScriptingApi::Console::assertIsDefined(var v1)
@@ -6886,14 +6869,6 @@ void ScriptingApi::Console::assertNoString(var value)
 	}
 }
 
-void ScriptingApi::Console::assertWithMessage(bool condition, String errorMessage)
-{
-	if (!condition)
-	{
-		reportScriptError("Assertion failure: " + errorMessage);
-	}
-}
-
 void ScriptingApi::Console::assertLegalNumber(var value)
 {
 	if (!VarTypeHelpers::isNumeric(value))
@@ -6927,58 +6902,6 @@ void ScriptingApi::Console::startSampling(const String& sessionId)
 		dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->addInplaceDebugValue(id, lineNumber, s->getTextForName(), s);
 	}
 #endif
-}
-
-struct TestHelpers
-{
-	static void replaceObjectWithId(var& obj)
-	{
-		if (obj.isArray())
-		{
-			for (auto& item : *obj.getArray())
-				replaceObjectWithId(item);
-		}
-		if (auto so = dynamic_cast<ConstScriptingObject*>(obj.getObject()))
-			obj = var(so->getObjectName().toString());
-	}
-
-	static String stringify(var argList)
-	{
-		replaceObjectWithId(argList);
-		return JSON::toString(argList, true);
-	}
-};
-
-void ScriptingApi::Console::testCallback(var obj, String callbackId, var argList)
-{
-	auto p = dynamic_cast<Processor*>(getScriptProcessor());
-
-	if (!getScriptProcessor()->getMainController_()->isFlakyThreadingAllowed())
-	{
-		debugToConsole(p, "warning: this should be only used in a testing setup");
-	}
-
-	
-
-	if (auto sc = dynamic_cast<ScriptingApi::Content::ScriptComponent*>(obj.getObject()))
-	{
-		debugToConsole(p, "BEGIN_CALLBACK_TEST " + sc->getDebugName() + "." + callbackId);
-
-		Array<var> args;
-
-		if (argList.isArray())
-			args.addArray(*argList.getArray());
-		else
-			args.add(argList);
-
-		auto ok = sc->testCallback(callbackId, args);
-
-		if (!ok.wasOk())
-			reportScriptError(ok.getErrorMessage());
-
-		debugToConsole(p, "END_CALLBACK_TEST");
-		debugToConsole(p, "CALLBACK_ARGS: >" + TestHelpers::stringify(argList));
-	}
 }
 
 void ScriptingApi::Console::sample(const String& label, var dataToSample)
@@ -7286,7 +7209,7 @@ var ScriptingApi::Colours::toHsl(var colour)
 int ScriptingApi::Colours::fromHsl(var hsl)
 {
 	if (hsl.isArray() && hsl.size() == 4)
-		return Colour().fromHSL((float)hsl[0], (float)hsl[1], (float)hsl[2], (uint8)(int)hsl[3]).getARGB();
+		return Colour().fromHSL(hsl[0], hsl[1], hsl[2], hsl[3]).getARGB();
 
 	return 0;
 }

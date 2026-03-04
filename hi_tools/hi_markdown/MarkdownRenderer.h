@@ -476,7 +476,7 @@ public:
 		{
 			struct ItemComponent : public Component
 			{
-				ItemComponent(MarkdownDataBase::Item::Ptr i, const MarkdownLayout::StyleData& l);
+				ItemComponent(MarkdownDataBase::Item i, const MarkdownLayout::StyleData& l);
 
 				void mouseEnter(const MouseEvent&) override;
 				void mouseExit(const MouseEvent&) override;
@@ -494,7 +494,7 @@ public:
 				const MarkdownLayout::StyleData& style;
 				MarkdownRenderer p;
 				int height = 0;
-				MarkdownDataBase::Item::Ptr item;
+				MarkdownDataBase::Item item;
 				bool isFuzzyMatch = false;
 
 				JUCE_DECLARE_WEAK_REFERENCEABLE(ItemComponent);
@@ -578,7 +578,7 @@ public:
 		struct Item : public juce::TreeViewItem,
 			public juce::KeyListener
 		{
-			Item(MarkdownDataBase::Item::Ptr item_, MarkdownPreview& previewParent_);
+			Item(MarkdownDataBase::Item item_, MarkdownPreview& previewParent_);
 			~Item() override;
 
 			bool keyPressed(const KeyPress& key, Component*) override;
@@ -600,7 +600,7 @@ public:
 
 			void paintItem(Graphics& g, int width, int height) override;
 
-			MarkdownDataBase::Item::Ptr item;
+			MarkdownDataBase::Item item;
 			MarkdownPreview& previewParent;
 		};
 

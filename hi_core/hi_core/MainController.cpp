@@ -115,6 +115,7 @@ bool MainController::unitTestMode = false;
 	globalPitchFactor(1.0),
 	midiInputFlag(false),
 	macroManager(this),
+	autoSaver(this),
 	delayedRenderer(this),
 	enablePluginParameterUpdate(true),
 	customTypeFaceData(ValueTree("CustomFonts")),
@@ -197,8 +198,7 @@ bool MainController::unitTestMode = false;
 
 	getGlobalUIUpdater()->setDebugSession(&getDebugSession());
 
-	ThreadStarters::startHigh(javascriptThreadPool);
-
+	javascriptThreadPool->startThread(8);
 	getKillStateHandler().setScriptingThreadId(javascriptThreadPool->getThreadId());
 };
 
@@ -927,14 +927,11 @@ int MainController::getNumActiveVoices() const
 	return getMainSynthChain()->getNumActiveVoices();
 }
 
-#if !HISE_JUCE8
 void MainController::beginParameterChangeGesture(int index)			{ dynamic_cast<PluginParameterAudioProcessor*>(this)->beginParameterChangeGesture(index); }
 
 void MainController::endParameterChangeGesture(int index)			{ dynamic_cast<PluginParameterAudioProcessor*>(this)->endParameterChangeGesture(index); }
 
 void MainController::setPluginParameter(int index, float newValue)  { dynamic_cast<PluginParameterAudioProcessor*>(this)->setParameterNotifyingHost(index, newValue); }
-#endif
-
 
 Processor *MainController::createProcessor(FactoryType *factory,
 											 const Identifier &typeName,
@@ -943,14 +940,10 @@ Processor *MainController::createProcessor(FactoryType *factory,
 	// Every chain must have a factory type!
 	jassert(factory != nullptr);
 
-	if (typeName.toString().containsChar(' '))
-	{
-		auto newId = Identifier(typeName.toString().removeCharacters(" "));
-		return factory->createProcessor(factory->getProcessorTypeIndex(newId), id);
-	}
-
 	// Create the processor using the factory type of the parent chain
-	return factory->createProcessor(factory->getProcessorTypeIndex(typeName), id);
+	Processor *p = factory->createProcessor(factory->getProcessorTypeIndex(typeName), id);
+
+	return p;
 };
 
 
@@ -1119,25 +1112,8 @@ void MainController::connectToGlobalRuntimeTargets(scriptnode::OpaqueNode& on, b
     {
         auto nn = getNeuralNetworks().getOrCreate(id);
         
-		try
-		{
-			auto con = nn->createConnection();
-			on.connectToRuntimeTarget(shouldAdd, con);
-
-			auto h = id.hashCode();
-			
-			if(shouldAdd && pendingInitialisedHashes.contains(h))
-			{
-				pendingInitialisedHashes.removeAllInstancesOf(h);
-				debugToConsole(getMainSynthChain(), "initialised neural network with hash " + String(h) + " (" + id + ")");
-			}
-		}
-		catch(scriptnode::Error& e)
-		{
-			auto x = ScriptnodeExceptionHandler::getErrorMessage(e);
-			pendingInitialisedHashes.add(e.expected);
-			debugToConsole(getMainSynthChain(), x);
-		}
+        auto con = nn->createConnection();
+        on.connectToRuntimeTarget(shouldAdd, con);
     }
 #endif
 }
@@ -1730,13 +1706,7 @@ MainController::CustomTypeFace::CustomTypeFace(ReferenceCountedObjectPtr<juce::T
 	for(char i = 32; i < 127; i++)
 	{
 		s = String::fromUTF8((&i), 1);
-
-#if HISE_JUCE8
-	characterWidths[i] = tf->getStringWidth(TypefaceMetricsKind::legacy, s);
-#else
-	characterWidths[i] = tf->getStringWidth(s);
-#endif
-
+		characterWidths[i] = tf->getStringWidth(s);
 	}
 }
 

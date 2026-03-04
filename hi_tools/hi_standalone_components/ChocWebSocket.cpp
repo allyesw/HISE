@@ -127,8 +127,8 @@ void WebViewData::TCPServer::start()
 		return;
 	}
 
-	ThreadStarters::startNormal(&communicationThread);
-	ThreadStarters::startNormal(&connectionThread);
+	communicationThread.startThread(5);
+	connectionThread.startThread(5);
 }
 
 void WebViewData::TCPServer::stop(int timeout)

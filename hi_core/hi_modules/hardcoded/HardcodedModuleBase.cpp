@@ -477,22 +477,6 @@ HardcodedSwappableEffect::HardcodedSwappableEffect(MainController* mc, bool isPo
 	polyHandler.setTempoSyncer(&tempoSyncer);
 	mc->addTempoListener(&tempoSyncer);
 
-	tempoSyncer.uuidRequestFunction = [this](char* suffix, int& len)
-	{
-		String id = dynamic_cast<Processor*>(this)->getId();
-
-		if(len != 0)
-		{
-			String sf(suffix, len);
-			id << "." << sf;
-
-			len = id.length();
-			memcpy(suffix, id.getCharPointer().getAddress(), len);
-		}
-
-		return true;
-	};
-
 #if USE_BACKEND
 	auto dllManager = dynamic_cast<BackendProcessor*>(mc)->dllManager.get();
 	dllManager->loadDll(false);
@@ -618,7 +602,10 @@ bool HardcodedSwappableEffect::setEffect(const String& factoryId, bool /*unused*
 	if (factoryId == currentEffect)
 		return true;
 
-	disconnectRuntimeTargets(&asProcessor());
+	if(opaqueNode != nullptr)
+	{
+		asProcessor().connectToRuntimeTargets(*opaqueNode, false);
+	}
 
 	auto idx = getModuleList().indexOf(factoryId);
 
@@ -777,7 +764,7 @@ bool HardcodedSwappableEffect::swap(HotswappableProcessor* other)
 		displayBuffers.swapWith(otherFX->displayBuffers);
 		listeners.swapWith(otherFX->listeners);
 
-		lastParameters.swapWith(otherFX->lastParameters);
+		std::swap(lastParameters, otherFX->lastParameters);
 
 		{
 			SimpleReadWriteLock::ScopedWriteLock sl(lock);
@@ -856,15 +843,10 @@ void HardcodedSwappableEffect::setHardcodedAttribute(int parameterIndex, float n
 		if(auto mc = getModulationChainForParameter(parameterIndex))
 		{
 			auto normValue = p->toRange().convertTo0to1(newValue, false);
-
-			if(mc->getChain()->getMode() == Modulation::Mode::PitchMode)
-				normValue = Modulation::PitchConverters::normalisedRangeToPitchFactor(normValue * 2.0f - 1.0f);
-
 			mc->getChain()->setInitialValue(normValue);
 		}
 		else
 		{
-			PolyHandler::ScopedAllVoiceSetter avs(polyHandler);
 			p->callback.call((double)newValue);
 		}
 	}
@@ -1168,10 +1150,7 @@ float* HardcodedSwappableEffect::getParameterPtr(int index) const
 Result HardcodedSwappableEffect::prepareOpaqueNode(OpaqueNode* n)
 {
 	if(auto rm = dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(asProcessor().getMainController()->getGlobalRoutingManager()))
-	{
 		tempoSyncer.additionalEventStorage = &rm->additionalEventStorage;
-		tempoSyncer.uuidManager = &rm->uuidManager;
-	}
 
 	if (n != nullptr && asProcessor().getSampleRate() > 0.0 && asProcessor().getLargestBlockSize() > 0)
 	{

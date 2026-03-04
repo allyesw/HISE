@@ -194,7 +194,7 @@ bool ModulatorChain::SpecialQueryFunctions::GainModulation::onScaleDrag(Processo
 }
 
 ModulationDisplayValue ModulatorChain::SpecialQueryFunctions::GainModulation::getDisplayValue(Processor* p, double v,
-	NormalisableRange<double> nr, int ) const
+	NormalisableRange<double> nr) const
 {
 	jassert(dynamic_cast<ModulatorSynth*>(p) != nullptr);
 	auto modChain = dynamic_cast<ModulatorChain*>(p->getChildProcessor(ModulatorSynth::InternalChains::GainModulation)); 
@@ -226,7 +226,7 @@ bool ModulatorChain::SpecialQueryFunctions::PitchModulation::onScaleDrag(Process
 }
 
 ModulationDisplayValue ModulatorChain::SpecialQueryFunctions::PitchModulation::getDisplayValue(Processor* p, double v,
-	NormalisableRange<double> nr, int) const
+	NormalisableRange<double> nr) const
 {
 	jassert(dynamic_cast<ModulatorSynth*>(p) != nullptr);
 	auto modChain = dynamic_cast<ModulatorChain*>(p->getChildProcessor(ModulatorSynth::InternalChains::PitchModulation));
@@ -326,7 +326,9 @@ ModulationDisplayValue ModulatorChain::getModulationDisplayValue(double pValue, 
 		}
 		case Modulation::PitchMode:
 		{
-			return SpecialQueryFunctions::PitchModulation().getDisplayValue(const_cast<Processor*>(getParentProcessor()), pValue, nr, -1);
+			// Use SpecialQueryFunction::PitchModulation instead...
+			jassertfalse;
+			break;
 		}
 		case Modulation::PanMode:
 		case Modulation::OffsetMode:
@@ -427,7 +429,7 @@ void ModulatorChain::setInternalAttribute(int i, float x)
 { jassertfalse; }
 
 float ModulatorChain::getAttribute(int i) const
-{ return -1.0; }
+{ jassertfalse; return -1.0; }
 
 float ModulatorChain::getCurrentMonophonicStartValue() const noexcept
 {
@@ -460,24 +462,6 @@ void ModulatorChain::applyMonoOnOutputValue(float monoValue)
 #endif
 }
 
-void ModulatorChain::updateInitialValueFromChildMods()
-{
-	auto iv = getInitialValue();
-
-	for(auto m: allModulators)
-	{
-		if(m->isBypassed())
-		{
-			auto mod = dynamic_cast<Modulation*>(m);
-			auto inactiveValue = m->getInactiveModValue();
-			m->setOutputValue(inactiveValue);
-			mod->applyModulationValue(inactiveValue, iv);
-		}
-	}
-
-	setInitialValue(iv);
-}
-
 void ModulatorChain::setInitialValue(float newInitialValue)
 {
 	if(getInitialValue() == newInitialValue)
@@ -498,7 +482,7 @@ void ModulatorChain::setInitialValue(float newInitialValue)
 		initialValue = { true, newInitialValue };
 		break;
 	case PitchMode:
-		initialValue = { true, newInitialValue };
+		initialValue = { true, PitchConverters::octaveRangeToPitchFactor(newInitialValue) };
 		break;
 	}
 }
@@ -684,23 +668,16 @@ void ModulatorChain::ModChainWithBuffer::prepareToPlay(double sampleRate, int sa
 
 	if (type == Type::Normal)
 		modBuffer.setMaxSize(samplesPerBlock);
-
-	jassert(numActiveVoices == 0);
 }
 
 void ModulatorChain::ModChainWithBuffer::handleHiseEvent(const HiseEvent& m)
 {
 	if (c->shouldBeProcessedAtAll())
 		c->handleHiseEvent(m);
-
-	if(m.isAllNotesOff())
-		numActiveVoices = 0;
 }
 
 void ModulatorChain::ModChainWithBuffer::resetVoice(int voiceIndex)
 {
-	numActiveVoices = jmax(numActiveVoices-1, 0);
-
 	if (c->hasActiveEnvelopesAtAll())
 	{
 		c->reset(voiceIndex);
@@ -717,8 +694,6 @@ void ModulatorChain::ModChainWithBuffer::stopVoice(int voiceIndex)
 
 void ModulatorChain::ModChainWithBuffer::startVoice(int voiceIndex)
 {
-	numActiveVoices++;
-
 	float firstDynamicValue = c->getInitialValueInternal();
 
 	
@@ -931,8 +906,7 @@ void ModulatorChain::ModChainWithBuffer::calculateMonophonicModulationValues(int
 		else
 		{
 			jassert(c->getMode() == Mode::CombinedMode ||
-					c->getMode() == Mode::GainMode ||
-					c->getMode() == Mode::PitchMode);
+					c->getMode() == Mode::GainMode);
 			FloatVectorOperations::fill(modBuffer.monoValues + startSample_cr, 1.0f, numSamples_cr);
 		}
 	}
@@ -1216,22 +1190,6 @@ float ModulatorChain::ModChainWithBuffer::getModValueForVoiceWithOffset(int star
 
 float ModulatorChain::ModChainWithBuffer::getOneModulationValue(int startSample) const
 {
-	if(numActiveVoices == 0)
-	{
-		ModIterator<Modulator> iter(c);
-
-		float m = 1.0f;
-
-		while(auto mod = iter.next())
-		{
-			auto mv = mod->getInactiveModValue();
-			m *= mv;
-		}
-
-		return m;
-	}
-		
-
 	// If you set this, you probably don't need this method...
 	jassert(!options.expandToAudioRate);
 
@@ -2246,36 +2204,23 @@ void ModulatorChain::ExtraModulatorRuntimeTargetSource::updateModulationProperti
 		{
 			if (parameterIndex != -1)
 			{
-				if(mode == Modulation::Mode::PitchMode)
-				{
-					mb->getChain()->setZeroPosition(0.5f);
-					mb->getChain()->setMode(mode, sendNotificationAsync);
-					mb->getChain()->setInitialValue(mb->getChain()->getInitialValue());
-					mb->getChain()->setTableValueConverter(Modulation::getValueAsSemitone);
-					mb->setClampTo0To1(false);
+				auto zp = mode == Modulation::Mode::PanMode ? 0.5f : 0.0f;
+				mb->getChain()->setZeroPosition(zp);
 
-					
+				// For some reason we'll force the CombinedMode....
+				auto modeToUse = mb->getChain()->checkRelease ? Modulation::Mode::GainMode :
+																Modulation::Mode::CombinedMode;
 
-				}
-				else
-				{
-					mb->setClampTo0To1(true);
+				
 
-					auto zp = mode == Modulation::Mode::PanMode ? 0.5f : 0.0f;
-					mb->getChain()->setZeroPosition(zp);
+				mb->getChain()->setMode(modeToUse, sendNotificationAsync);
 
-					// For some reason we'll force the CombinedMode....
-					auto modeToUse = mb->getChain()->checkRelease ? Modulation::Mode::GainMode :
-						Modulation::Mode::CombinedMode;
+				auto pd = pf(parameterIndex);
 
-					mb->getChain()->setMode(modeToUse, sendNotificationAsync);
+				auto initialValue = pd.ir.convertTo0to1(pd.initValue, false);
+				mb->getChain()->setInitialValue(initialValue);
 
-					auto pd = pf(parameterIndex);
-
-					auto initialValue = pd.ir.convertTo0to1(pd.initValue, false);
-					mb->getChain()->setInitialValue(initialValue);
-
-					mb->getChain()->setTableValueConverter([pd](float v)
+				mb->getChain()->setTableValueConverter([pd](float v)
 					{
 						v = pd.ir.convertFrom0to1(v, false);
 
@@ -2284,7 +2229,6 @@ void ModulatorChain::ExtraModulatorRuntimeTargetSource::updateModulationProperti
 						else
 							return String(v);
 					});
-				}
 			}
 		}
 

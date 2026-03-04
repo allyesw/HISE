@@ -35,6 +35,7 @@
 namespace juce
 {
 using ButtonListener = Button::Listener;
+using SliderListener = Slider::Listener;
 using ComboBoxListener = ComboBox::Listener;
 using TextEditorListener = TextEditor::Listener;
 using LabelListener = Label::Listener;

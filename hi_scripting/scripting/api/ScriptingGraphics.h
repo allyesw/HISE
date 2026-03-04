@@ -115,7 +115,7 @@ namespace ScriptingObjects
 			return getProperty(id);
 		}
 
-		Ptr clone() const override
+		Ptr clone() override
 		{
 			return new ScriptRectangle(this->rectangle);
 		}
@@ -517,9 +517,6 @@ namespace ScriptingObjects
 
 		/** Returns the length of the path. */
 		var getLength();
-
-		/** Returns the size ratio W/H of the path. */
-		var getRatio();
 
 		/** Creates a fillable path using the provided strokeData (with optional dot. */
 		var createStrokedPath(var strokeData, var dotData);

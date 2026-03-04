@@ -3165,12 +3165,7 @@ float ScriptingObjects::ScriptingModulator::getCurrentLevel()
 {
 	if (checkValidObject())
 	{
-		auto outValue = m->getProcessor()->getDisplayValues().outL;
-
-		if(m->getMode() == Modulation::Mode::PitchMode)
-			outValue = Modulation::PitchConverters::pitchFactorToOutputValue(outValue);
-
-		return outValue;
+		return m->getProcessor()->getDisplayValues().outL;
 	}
 	
 	return 0.f;
@@ -7719,7 +7714,7 @@ void ScriptingObjects::ScriptBackgroundTask::callOnBackgroundThread(var backgrou
 		currentTask = WeakCallbackHolder(getScriptProcessor(), this, backgroundTaskFunction, 1);
 		currentTask.incRefCount();
 		currentTask.addAsSource(this, "backgroundFunction");
-		ThreadStarters::startHigh(this);
+		startThread(8);
 	}
 }
 
@@ -7866,7 +7861,7 @@ void ScriptingObjects::ScriptBackgroundTask::runProcess(var command, var args, v
 		currentTask.clear();
 		childProcessData = new ChildProcessData(*this, command.toString(), args, logFunction);
 
-		ThreadStarters::startHigh(this);
+		startThread(8);
 	}
 }
 
@@ -10234,26 +10229,19 @@ void ScriptingObjects::ScriptBuilder::clear()
 	auto thisAsP = dynamic_cast<Processor*>(getScriptProcessor());
 
     auto mc = getScriptProcessor()->getMainController_();
+    SUSPEND_GLOBAL_DISPATCH(mc, "clear from builder");
+    MainController::ScopedBadBabysitter sb(mc);
 
-	SUSPEND_GLOBAL_DISPATCH(mc, "clear from builder");
-	ScopedPointer<MainController::ScopedBadBabysitter> sb;
+	mc->getProcessorChangeHandler().sendProcessorChangeMessage(mc->getMainSynthChain(), MainController::ProcessorChangeHandler::EventType::ClearBeforeRebuild, false);
 
-#if USE_BACKEND
-	if (!CompileExporter::shouldSkipAudioDriverInitialisation())
+	MessageManager::callAsync([this]()
 	{
-		sb = new MainController::ScopedBadBabysitter(mc);
+		getScriptProcessor()->getScriptingContent()->setIsRebuilding(true);
+	});
+	
 
-		mc->getProcessorChangeHandler().sendProcessorChangeMessage(mc->getMainSynthChain(), MainController::ProcessorChangeHandler::EventType::ClearBeforeRebuild, false);
-
-		MessageManager::callAsync([this]()
-		{
-			getScriptProcessor()->getScriptingContent()->setIsRebuilding(true);
-		});
-
-		Thread::getCurrentThread()->wait(500);
-		dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->getScriptEngine()->extendTimeout(500);
-	}
-#endif
+	Thread::getCurrentThread()->wait(500);
+	dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->getScriptEngine()->extendTimeout(500);
 
 	raw::Builder b(mc);
 

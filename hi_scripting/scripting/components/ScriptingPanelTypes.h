@@ -47,7 +47,6 @@ namespace InterfaceDesignerShortcuts
 	DECLARE_ID(id_show_json);
     DECLARE_ID(id_show_panel_data_json);
 	DECLARE_ID(id_duplicate);
-	DECLARE_ID(id_toggle_overlay);
 }
 #undef DECLARE_ID
 
@@ -241,8 +240,6 @@ public:
 			static bool distribute(Editor* editor, bool isVertical);
 			static bool align(Editor* editor, bool isVertical);
 			static bool undo(Editor * e, bool shouldUndo);
-
-			static bool toggleOverlay(Editor& e);
 		};
 
 		LambdaBroadcaster<Image, float> overlayBroadcaster;
@@ -253,10 +250,7 @@ public:
 		LookAndFeel_V4 slaf;
 		ComboBox* zoomSelector;
 		ComboBox* overlaySelector;
-		Component* overlayToggleButton;
 		Slider* overlayAlphaSlider;
-		float lastOverlayAlpha = 0.0f;
-		bool overlayVisible = true;
 
 		JUCE_DECLARE_WEAK_REFERENCEABLE(Editor);
 	};

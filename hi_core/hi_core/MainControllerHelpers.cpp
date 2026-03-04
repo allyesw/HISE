@@ -1609,8 +1609,7 @@ void AudioRendererBase::initAfterFillingEventBuffer()
 			for (int i = 0; i < numChannelsToRender; i++)
 				channels.add(new VariantBuffer(numSamplesToRender));
 
-			ThreadStarters::startHigh(this);
-
+			Thread::startThread(8);
 		}
 	}
 }

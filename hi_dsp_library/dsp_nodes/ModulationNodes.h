@@ -539,6 +539,7 @@ private:
 
 public:
 
+	SN_VOICE_SETTER(mod_base, state);
 };
 
 }

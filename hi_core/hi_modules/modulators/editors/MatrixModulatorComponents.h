@@ -101,21 +101,6 @@ struct MatrixBase: public Component,
 		bool initialised = false;
 	};
 
-	struct DeleteButton : public Button
-	{
-		DeleteButton();
-
-		void paintButton(Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
-
-		void resized() override
-		{
-			PathFactory::scalePath(icon, this, 4.0f);
-		}
-
-		String pathData;
-		Path icon;
-	};
-
 	struct SearchBar: public Label,
 					  public Label::Listener,
 					  public Timer
@@ -290,7 +275,6 @@ struct MatrixContent: public MatrixBase
 				addHeaderItem(id, pn[id]);
 
 			addHeaderItem("Plotter", "Plotter");
-			addHeaderItem("delete", " ");
 		}
 
 	};
@@ -364,7 +348,6 @@ struct MatrixContent: public MatrixBase
 		IntensitySlider intensitySlider;
 		IntensitySlider auxIntensitySlider;
 		ToggleButton invertedButton;
-		DeleteButton deleteButton;
 		ComboBox auxSelector;
 		UndoManager* um;
 	};
@@ -412,11 +395,9 @@ struct MatrixContent: public MatrixBase
 			String p64;
 			Path p;
 			bool currentlySelected = false;
-			int prevSourceIndex = -1;
-			bool unselectableExclusiveSource = false;
 		};
 
-		Controller(MainController* mc, Component& p, bool unselectableExclusiveSource);
+		Controller(MainController* mc, Component& p);
 
 		~Controller();
 
@@ -480,7 +461,7 @@ struct SliderMatrix: public MatrixBase
 	};
 
 	struct Row: public RowBase,
-				public Slider::Listener 
+				public SliderListener 
 	{
 		Row(SliderMatrix& parent, const StringArray& sources, const String& targetId_);
 
@@ -595,42 +576,9 @@ struct ModulationMatrixPanel: public ModulationMatrixBasePanel
 
 struct ModulationMatrixControlPanel: public ModulationMatrixBasePanel
 {
-	enum SpecialPanelIds
-	{
-		UnselectableExclusiveSource = PanelWithProcessorConnection::SpecialPanelIds::numSpecialPanelIds,
-		numSpecialPanelIds
-	};
-
 	SET_PANEL_NAME("ModulationMatrixController");
 	ModulationMatrixControlPanel(FloatingTile* parent);
-
-	var toDynamicObject() const override;
-	void fromDynamicObject(const var& object) override;
-	int getNumDefaultableProperties() const override { return (int)SpecialPanelIds::numSpecialPanelIds; }
-	Identifier getDefaultablePropertyId(int id) const override
-	{
-		if (id < (int)PanelWithProcessorConnection::SpecialPanelIds::numSpecialPanelIds)
-			return ModulationMatrixBasePanel::getDefaultablePropertyId(id);
-
-		RETURN_DEFAULT_PROPERTY_ID(id, SpecialPanelIds::UnselectableExclusiveSource, "UnselectableExclusiveSource");
-
-		return {};
-	}
-
-	var getDefaultProperty(int index) const override
-	{
-		if (index < (int)PanelWithProcessorConnection::SpecialPanelIds::numSpecialPanelIds)
-			return ModulationMatrixBasePanel::getDefaultProperty(index);
-
-		RETURN_DEFAULT_PROPERTY(index, (int)SpecialPanelIds::UnselectableExclusiveSource, false);
-
-		return var();
-	}
-
 	Component* createMatrixComponent(const String& targetId) override;
-
-	bool exclusiveSource = false;
-	
 };
 
 

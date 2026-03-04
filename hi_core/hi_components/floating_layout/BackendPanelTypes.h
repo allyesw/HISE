@@ -133,11 +133,7 @@ public:
 
 	int getLoopBeforeWrap(int numSamples);
 
-#if HISE_JUCE8
-	Optional<PositionInfo> getPosition() const override;
-#else
 	bool getCurrentPosition (CurrentPositionInfo& result) override;
-#endif
 
 	void prepareToPlay(double newSampleRate);
 

@@ -218,7 +218,7 @@ MainTopBar::ClickablePeakMeter::PopupComponent::PopupComponent(ClickablePeakMete
 
 	setMode(Mode::Oscilloscope);
 
-	ThreadStarters::startHigh(this);
+	startThread(8);
 }
 
 MainTopBar::ClickablePeakMeter::PopupComponent::~PopupComponent()
