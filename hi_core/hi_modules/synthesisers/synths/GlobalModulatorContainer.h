@@ -662,6 +662,7 @@ public:
 	StringArray customEditCallbacks;
 	LambdaBroadcaster<int, String> editCallbackHandler;
 
+	bool exclusiveSourceMode = false;
 	LambdaBroadcaster<int> currentMatrixSourceBroadcaster;
 
 	enum class DragAction
@@ -684,6 +685,22 @@ public:
 	void cleanUpRuntimeSources()
 	{
 		runtimeSource.clear();
+	}
+
+	void setExlusiveMatrixSource(int sourceIndex, NotificationType n)
+	{
+		if (matrixProperties.selectableSources)
+		{
+			currentMatrixSourceBroadcaster.sendMessage(n, sourceIndex);
+		}
+	}
+
+	int getExclusiveMatrixSource() const
+	{
+		if(matrixProperties.selectableSources)
+			return currentMatrixSourceBroadcaster.getLastValue();
+
+		return -1;
 	}
 
 private:
@@ -850,7 +867,19 @@ private:
 		GlobalModulatorContainer& parent;
 	} runtimeSource;
 
-    struct GlobalModulatorCable;
+	struct GlobalModulatorCable
+	{
+		WeakReference<Modulator> mod;
+		var cable;
+
+		void send(int voiceIndex, bool isEnvelope = false, int startSample = 0);
+
+		bool operator==(const GlobalModulatorCable& other) const
+		{
+			return other.mod == mod &&
+				cable == other.cable;
+		}
+	};
 
     SimpleReadWriteLock cableLock;
     

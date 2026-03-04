@@ -987,7 +987,7 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 	    return { "Yes", "No" };
 
 	if (id == Compiler::VisualStudioVersion)
-		return { "Visual Studio 2017", "Visual Studio 2022" };
+		return { "Visual Studio 2022", "Visual Studio 2026" };
 
 	if(id == Other::GlobalHiseScaleFactor)
 	{
@@ -1230,7 +1230,7 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 #if HISE_USE_VS2022
 	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2022";
 #else
-	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2017";
+	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2026";
 #endif
 
 #if JUCE_MAC
@@ -1382,7 +1382,9 @@ void HiseSettings::Data::settingWasChanged(const Identifier& id, const var& newV
 	else if (id == Other::UseOpenGL)
 		PresetHandler::showMessageWindow("Reopen HISE window", "Restart HISE (or reopen this window) in order to apply the new Graphics setting", PresetHandler::IconType::Info);
 	else if (id == Other::EnableAutosave || id == Other::AutosaveInterval)
-		mc->getAutoSaver().updateAutosaving();
+	{
+		BACKEND_ONLY(dynamic_cast<BackendProcessor*>(mc)->getAutoSaver().updateAutosaving());
+	}
 	else if (id == Other::AudioThreadGuardEnabled)
 		mc->getKillStateHandler().enableAudioThreadGuard(newValue);
 	else if (id == Other::GlobalHiseScaleFactor)
