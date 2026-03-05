@@ -1090,7 +1090,8 @@ void HiseAudioThumbnail::LoadingThread::run()
 	}
 	else
 	{
-		float h = (float)bounds.getHeight() / 2.0f;
+		/*
+        float h = (float)bounds.getHeight() / 2.0f;
 
 		if (l != nullptr && l->size != 0)
 		{
@@ -1107,6 +1108,18 @@ void HiseAudioThumbnail::LoadingThread::run()
 
 			scalePathFromLevels(rPath, rRects, { 0.0f, h, (float)bounds.getWidth(), h }, data, numSamples, sv);
 		}
+        */
+        
+        //changed: force stereo waveforms to only show left channel
+        if (l != nullptr && l->size != 0)
+        {
+            const float* data = l->buffer.getReadPointer(0);
+            const int numSamples = l->size;
+
+            scalePathFromLevels(lPath, lRects, { 0.0f, 0.0f, (float)bounds.getWidth(), (float)bounds.getHeight() }, data, numSamples, sv);
+        }
+        rPath.clear();
+        rRects.clear();
 	}
 
 	{
