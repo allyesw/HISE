@@ -18,6 +18,7 @@ You have to use Terminal for this. Go to GitHub Desktop > Repository > Open in T
 		- Changed dragged out MIDI filename (hi_core/hi_dsp/modules/MidiPlayer.cpp)
 		- Changed wavetable waterfall colors (hi_core/hi_components/audio_components/SampleComponents.cpp)
 		- Fixed MidiOverlay DAW crash on second instance (hi_core/hi_components/midi_overlays/MidiOverlayFactory.h). *NOTE: This needs to be tested in exported plugins because I'm not sure that removing the DeletedAtShutdown class won't screw other things up. More info: https://github.com/allyesw/HISE/commit/49028f65941185b389645d927b18610d3b8e5f31*
+		- Fixed EQ not repainting after removing last node (hi_core/hi_components/audio_components/EqComponent.cpp) *NOTE: This is fixed in later updates upstream, so you won't need to do this after syncing next*
 
 	If you have to do this manually, make sure to preserve this file and continue on to make the other changes below.
 
