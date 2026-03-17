@@ -331,7 +331,7 @@
 // hi_faust_types flags:
 
 #ifndef    FAUST_NO_WARNING_MESSAGES
- //#define FAUST_NO_WARNING_MESSAGES 0
+ #define   FAUST_NO_WARNING_MESSAGES 1
 #endif
 
 //==============================================================================
