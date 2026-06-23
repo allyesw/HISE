@@ -20,6 +20,15 @@ You have to use Terminal for this. Go to GitHub Desktop > Repository > Open in T
 		- Fixed MidiOverlay DAW crash on second instance (hi_core/hi_components/midi_overlays/MidiOverlayFactory.h). *NOTE: This needs to be tested in exported plugins because I'm not sure that removing the DeletedAtShutdown class won't screw other things up. More info: https://github.com/allyesw/HISE/commit/49028f65941185b389645d927b18610d3b8e5f31*
 		- Fixed EQ not repainting after removing last node (hi_core/hi_components/audio_components/EqComponent.cpp) *NOTE: This is fixed in later updates upstream, so you won't need to do this after syncing next*
 		- Force stereo waveforms to only show left channel (hi_tools/hi_standalone_components/SampleDisplayComponent.cpp)
+
+		- For Oriental Drummer: Changed dragged out MIDI filename to "Oriental Drummer MIDI" and changed Projucer file Extra Preprocessor Defintions to the following: 
+			HI_ENABLE_EXPANSION_EDITING=1
+			HISE_ENABLE_EXPANSIONS=1
+			HISE_SCRIPT_SERVER_TIMEOUT=20000
+			HISE_INCLUDE_PROFILING_TOOLKIT=1
+			NUM_HARDCODED_FX_MODS=6
+			NUM_HARDCODED_POLY_FX_MODS=6
+			NUM_MAX_CHANNELS=32
 		
 	If you have to do this manually, make sure to preserve this file and continue on to make the other changes below.
 
